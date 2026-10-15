@@ -2,6 +2,7 @@
  * rpiv-wf eval — run the same workflow (or step) across variants and compare.
  *
  *   rpiv-wf eval spec.json [--dry-run] [--out <dir>]
+ *   rpiv-wf eval --continue <eval-results dir>      finish an interrupted eval
  *
  * A variant is a set of overrides: model, effort, tools, which settings and
  * CLAUDE.md memory load, permission mode, env, and a setup command run in the
@@ -11,13 +12,18 @@
  * `answers` (a scripted person) and resumed. After the run, `checks` (shell
  * commands, exit 0 = pass) grade the working tree.
  *
+ * Built for long unattended runs: each trial is capped by `timeoutMinutes`
+ * (graceful stop, then a hard kill) and optionally `maxCostUsd`; `budgetUsd`
+ * caps the whole eval; results are appended as each trial finishes, and
+ * `--continue` re-runs only the trials an interrupted eval did not record.
+ *
  * Output: <out>/<name>-<stamp>/results.jsonl (one row per trial, written as
  * each finishes), summary.md (per-variant comparison), trials/<variant>__<n>/
  * (the working copy, rpiv-wf's log, metrics).
  */
 
 import { spawn } from "node:child_process";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { CLI_BIN, EXIT_STATE } from "./mcp.js";
 import { emptyTotals, mergeTotals, type UsageTotals } from "./usage.js";
@@ -36,6 +42,8 @@ export interface Variant {
 	env?: Record<string, string>;
 	/** Scripted answers for parked questions, used in order. */
 	answers?: string[];
+	/** Stop a trial once it has cost this much (rpiv-wf --max-cost). */
+	maxCostUsd?: number;
 }
 
 export interface Check {
@@ -57,6 +65,8 @@ export interface EvalSpec {
 	variants: Variant[];
 	answers?: string[];
 	checks?: Check[];
+	/** Stop starting new trials once the eval has spent this much. */
+	budgetUsd?: number;
 }
 
 export interface TrialResult {
@@ -107,6 +117,13 @@ export function specProblems(spec: Partial<EvalSpec>): string[] {
 	] as const) {
 		if (n !== undefined && (!Number.isInteger(n) || n < 1)) p.push(`${k}: a positive integer`);
 	}
+	for (const [k, n] of [
+		["timeoutMinutes", spec.timeoutMinutes],
+		["budgetUsd", spec.budgetUsd],
+		...(spec.variants ?? []).map((v) => [`variant "${v.name}" maxCostUsd`, v.maxCostUsd] as const),
+	] as const) {
+		if (n !== undefined && !(typeof n === "number" && n > 0)) p.push(`${k}: a positive number`);
+	}
 	return p;
 }
 
@@ -125,6 +142,7 @@ export function variantFlags(v: Omit<Variant, "name">, cwd: string): string[] {
 	add("--disallowed-tools", list(v.disallowedTools));
 	add("--setting-sources", list(v.settingSources));
 	add("--concurrency", v.concurrency);
+	add("--max-cost", v.maxCostUsd);
 	return out;
 }
 
@@ -159,7 +177,10 @@ function readJson<T>(file: string): T | undefined {
 export async function runTrial(spec: EvalSpec, fixture: string, t: Trial, deps: EvalDeps): Promise<TrialResult> {
 	const work = join(t.dir, "work");
 	const log = join(t.dir, "rpiv-wf.log");
-	const timeoutMs = (spec.timeoutMinutes ?? 30) * 60_000;
+	const minutes = spec.timeoutMinutes ?? 30;
+	// rpiv-wf stops itself at `minutes` (resumable, exit 124); the kill is the backstop.
+	const timeoutMs = (minutes + 2) * 60_000;
+	rmSync(t.dir, { recursive: true, force: true }); // a half-finished trial from an interrupted eval
 	mkdirSync(t.dir, { recursive: true });
 	cpSync(fixture, work, { recursive: true, filter: (src) => basename(src) !== "node_modules" });
 	const env = { ...process.env, ...t.variant.env, RPIV_WF_KATA: "off" };
@@ -183,7 +204,7 @@ export async function runTrial(spec: EvalSpec, fixture: string, t: Trial, deps: 
 			return result;
 		}
 	}
-	const flags = variantFlags(t.variant, work);
+	const flags = [...variantFlags(t.variant, work), "--timeout", String(minutes)];
 	const answers = [...(t.variant.answers ?? spec.answers ?? [])];
 	const name = `eval-${t.variant.name}-${t.repeat}`.slice(0, 64);
 	let args = spec.step
@@ -226,11 +247,11 @@ const pct = (part: number, n: number) => (n ? `${Math.round((100 * part) / n)}%`
 const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n)}`);
 
 /** Per-variant comparison table plus per-check pass rates. */
-export function summarize(spec: EvalSpec, results: TrialResult[]): string {
+export function summarize(spec: EvalSpec, results: TrialResult[], totals?: { spent: number; skipped: number }): string {
 	const lines = [
 		`# eval: ${spec.name}`,
 		"",
-		`${spec.workflow ? `workflow \`${spec.workflow}\`` : `step \`${spec.step}\``} · ${results.length} trial(s)`,
+		`${spec.workflow ? `workflow \`${spec.workflow}\`` : `step \`${spec.step}\``} · ${results.length} trial(s)${totals ? ` · spent $${totals.spent.toFixed(4)}` : ""}${totals?.skipped ? ` · ${totals.skipped} not started (budget)` : ""}`,
 		"",
 		"| variant | trials | completed | checks passed | mean cost | mean wall | mean tokens in / cached / out | mean tool calls | answers used |",
 		"| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
@@ -265,36 +286,85 @@ export function summarize(spec: EvalSpec, results: TrialResult[]): string {
 	return `${lines.join("\n")}\n`;
 }
 
+/** Results already recorded in an eval directory, keyed `variant#repeat`. */
+function recorded(outDir: string): Map<string, TrialResult> {
+	const file = join(outDir, "results.jsonl");
+	const done = new Map<string, TrialResult>();
+	if (!existsSync(file)) return done;
+	for (const line of readFileSync(file, "utf8").split("\n")) {
+		try {
+			const r = JSON.parse(line) as TrialResult;
+			done.set(`${r.variant}#${r.repeat}`, r);
+		} catch {
+			// a line cut short by a crash: that trial runs again
+		}
+	}
+	return done;
+}
+
 export async function runEval(
-	specFile: string,
-	opts: { outDir?: string; dryRun?: boolean; out: (l: string) => void; deps?: EvalDeps },
+	specFile: string | undefined,
+	opts: {
+		outDir?: string;
+		dryRun?: boolean;
+		continueDir?: string;
+		out: (l: string) => void;
+		deps?: EvalDeps;
+		signal?: AbortSignal;
+	},
 ): Promise<number> {
-	const spec = readJson<EvalSpec>(specFile);
-	const problems = spec ? specProblems(spec) : [`cannot read ${specFile} as JSON`];
+	// --continue reads the spec saved with the results, so a later edit to the
+	// original spec cannot change what the finished half was measured against.
+	const saved = opts.continueDir ? join(opts.continueDir, "spec.json") : undefined;
+	const source = saved ?? specFile;
+	const spec = source ? readJson<EvalSpec & { fixtureDir?: string }>(source) : undefined;
+	const problems = spec ? specProblems(spec) : [`cannot read ${source ?? "a spec"} as JSON`];
 	if (!spec || problems.length > 0) {
 		for (const p of problems) opts.out(`spec: ${p}`);
 		return 2;
 	}
-	const fixture = resolve(dirname(specFile), spec.fixture);
+	const fixture = spec.fixtureDir ?? resolve(dirname(specFile!), spec.fixture);
 	if (!existsSync(fixture)) {
 		opts.out(`spec: fixture ${fixture} does not exist`);
 		return 2;
 	}
 	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-	const outDir = resolve(opts.outDir ?? join(dirname(specFile), "eval-results"), `${spec.name}-${stamp}`);
+	const outDir =
+		opts.continueDir ?? resolve(opts.outDir ?? join(dirname(specFile!), "eval-results"), `${spec.name}-${stamp}`);
+	const done = recorded(outDir);
 	const trials = plan(spec, outDir);
-	opts.out(`${trials.length} trial(s): ${spec.variants.length} variant(s) × ${spec.repeats ?? 1} repeat(s)`);
-	for (const t of trials)
+	const todo = trials.filter((t) => !done.has(`${t.variant.name}#${t.repeat}`));
+	opts.out(
+		`${trials.length} trial(s): ${spec.variants.length} variant(s) × ${spec.repeats ?? 1} repeat(s)${done.size ? `; ${done.size} already recorded, ${todo.length} to run` : ""}`,
+	);
+	for (const t of todo)
 		opts.out(`  ${t.variant.name} #${t.repeat}: rpiv-wf ${variantFlags(t.variant, "<copy>").join(" ")}`);
 	if (opts.dryRun) return 0;
 	const deps = opts.deps ?? nodeEvalDeps();
 	mkdirSync(outDir, { recursive: true });
-	const results: TrialResult[] = [];
+	opts.out(`results: ${outDir}`);
+	if (!saved)
+		writeFileSync(join(outDir, "spec.json"), `${JSON.stringify({ ...spec, fixtureDir: fixture }, null, "\t")}\n`);
+	const results: TrialResult[] = [...done.values()];
+	let spent = results.reduce((n, r) => n + r.usage.costUsd, 0);
 	let next = 0;
+	let skipped = 0;
+	let interrupted = 0;
 	const worker = async () => {
-		while (next < trials.length) {
-			const t = trials[next++]!;
+		while (next < todo.length && !opts.signal?.aborted) {
+			if (spec.budgetUsd !== undefined && spent >= spec.budgetUsd) {
+				skipped = todo.length - next;
+				next = todo.length;
+				break;
+			}
+			const t = todo[next++]!;
 			const r = await runTrial(spec, fixture, t, deps);
+			spent += r.usage.costUsd;
+			// Ctrl-C stops the trial too; leave it unrecorded so --continue runs it again.
+			if (opts.signal?.aborted && r.state === "interrupted") {
+				interrupted++;
+				continue;
+			}
 			results.push(r);
 			appendFileSync(join(outDir, "results.jsonl"), `${JSON.stringify(r)}\n`);
 			opts.out(
@@ -302,11 +372,18 @@ export async function runEval(
 			);
 		}
 	};
-	await Promise.all(Array.from({ length: Math.min(spec.parallel ?? 1, trials.length) }, worker));
+	await Promise.all(Array.from({ length: Math.min(spec.parallel ?? 1, Math.max(todo.length, 1)) }, worker));
+	const left = todo.length - next + interrupted;
+	if (opts.signal?.aborted && left > 0) {
+		opts.out(`interrupted: ${left} trial(s) not recorded; finish with: rpiv-wf eval --continue ${outDir}`);
+		return 130;
+	}
+	if (skipped > 0)
+		opts.out(`budget $${spec.budgetUsd} reached ($${spent.toFixed(4)}): ${skipped} trial(s) not started`);
 	results.sort((a, b) => a.variant.localeCompare(b.variant) || a.repeat - b.repeat);
-	writeFileSync(join(outDir, "summary.md"), summarize(spec, results));
+	writeFileSync(join(outDir, "summary.md"), summarize(spec, results, { spent, skipped }));
 	opts.out(`summary: ${join(outDir, "summary.md")}`);
-	return 0;
+	return skipped > 0 ? 3 : 0;
 }
 
 export function nodeEvalDeps(): EvalDeps {
@@ -318,9 +395,15 @@ export function nodeEvalDeps(): EvalDeps {
 				const write = (b: Buffer) => appendFileSync(o.log, b);
 				child.stdout.on("data", write);
 				child.stderr.on("data", write);
-				const timer = setTimeout(() => child.kill("SIGINT"), o.timeoutMs);
+				// SIGINT lets rpiv-wf stop resumably; SIGKILL if it has not exited 30s later.
+				let kill: NodeJS.Timeout | undefined;
+				const timer = setTimeout(() => {
+					child.kill("SIGINT");
+					kill = setTimeout(() => child.kill("SIGKILL"), 30_000);
+				}, o.timeoutMs);
 				child.on("close", (code) => {
 					clearTimeout(timer);
+					clearTimeout(kill);
 					done({ code: code ?? 1 });
 				});
 			}),

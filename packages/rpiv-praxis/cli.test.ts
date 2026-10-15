@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunWorkflowResult } from "@juicesharp/rpiv-workflow";
@@ -32,6 +32,15 @@ function harness(result: RunWorkflowResult = { success: true, stagesCompleted: 2
 }
 
 describe("rpiv-wf", () => {
+	it("prints usage to stdout and exits 0 for --help, -h and help", async () => {
+		for (const args of [["--help"], ["-h"], ["help"], ["run", "--help"]]) {
+			const h = harness();
+			expect(await h.go(args)).toBe(EXIT.ok);
+			expect(h.out.join("\n")).toMatch(/--max-cost/);
+			expect(h.err).toEqual([]);
+		}
+	});
+
 	it("lists workflows", async () => {
 		const h = harness();
 		expect(await h.go(["list"])).toBe(EXIT.ok);
@@ -269,5 +278,64 @@ describe("rpiv-wf steps", () => {
 		});
 		await h.go(["list"]);
 		expect(h.out).toEqual(["build"]);
+	});
+});
+
+describe("rpiv-wf limits for unattended runs", () => {
+	const deps = { query: vi.fn(), forkSession: vi.fn() } as never;
+	const metricsOf = (file: string) => JSON.parse(readFileSync(file, "utf8"));
+
+	it("--max-cost stops the run once spend reaches it (exit 76) and says why in the metrics", async () => {
+		const h = harness({ success: false, stagesCompleted: 1, runId: "r1" });
+		vi.mocked(h.api.runWorkflowByName).mockImplementationOnce(async (ctx, _n, _i, opts) => {
+			const onUsage = (ctx as unknown as { opts: { onUsage(u: unknown): void } }).opts.onUsage;
+			const u = { costUsd: 0.3, turns: 1, durationMs: 1, models: {}, toolCalls: {} };
+			const halt = (ctx as unknown as { opts: { halt: AbortSignal } }).opts.halt;
+			onUsage(u);
+			expect(halt.aborted).toBe(false);
+			onUsage(u);
+			expect(halt.aborted).toBe(true);
+			// The runner's signal stays cold, so the stage that just finished is kept.
+			expect((opts as { signal: AbortSignal }).signal.aborted).toBe(false);
+			return { success: false, stagesCompleted: 1, runId: "r1" };
+		});
+		const metricsFile = join(mkdtempSync(join(tmpdir(), "rpiv-m-")), "m.json");
+		const err: string[] = [];
+		const code = await main(
+			["run", "x", "--max-cost", "0.5", "--plugin-dir", plugin()],
+			{ out: () => {}, err: (l) => err.push(l) },
+			{ api: h.api, deps, kata: null, metricsFile },
+		);
+		expect(code).toBe(EXIT.budget);
+		expect(metricsOf(metricsFile)).toMatchObject({ exitCode: 76, stopped: "budget", usage: { costUsd: 0.6 } });
+		expect(err.join("\n")).toContain("--max-cost $0.5 reached");
+	});
+
+	it("--timeout stops the run after that many minutes (exit 124)", async () => {
+		const h = harness();
+		vi.mocked(h.api.runWorkflowByName).mockImplementationOnce(async (_c, _n, _i, opts) => {
+			const signal = (opts as { signal: AbortSignal }).signal;
+			await new Promise((r) => signal.addEventListener("abort", r, { once: true }));
+			return { success: false, stagesCompleted: 0, runId: "r2" };
+		});
+		const code = await main(
+			["run", "x", "--timeout", "0.0005", "--plugin-dir", plugin()],
+			{ out: () => {}, err: () => {} },
+			{
+				api: h.api,
+				deps,
+				kata: null,
+			},
+		);
+		expect(code).toBe(EXIT.timeout);
+	});
+
+	it.each([
+		["--max-cost", "0"],
+		["--max-cost", "abc"],
+		["--timeout", "-1"],
+	])("rejects %s %s", async (flag, value) => {
+		const h = harness();
+		expect(await h.go(["run", "x", flag, value])).toBe(EXIT.usage);
 	});
 });

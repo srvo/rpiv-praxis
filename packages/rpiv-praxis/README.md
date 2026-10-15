@@ -19,27 +19,47 @@ Same catalog as Pi's `/wf`: rpiv-pi's built-ins (`build`, `ship`, `vet`,
 Same run state too: runs land in `.rpiv/workflows/runs/`, so a run started here
 lists and resumes from Pi and vice versa.
 
-`private: true`, like rpiv-telemetry: it runs from a checkout of this repo.
+## Install just praxis
+
+Not on npm (`private: true`): it needs this fork's rpiv-pi, which carries the
+Claude plugin and the Pi-free seams praxis imports. Install from a checkout;
+the other packages' dependencies are skipped.
+
+```sh
+git clone https://github.com/ethicalcapital/rpiv-mono && cd rpiv-mono
+npm install --workspace @ethicalcapital/rpiv-praxis --ignore-scripts
+npm install -g ./packages/rpiv-praxis --ignore-scripts   # optional: rpiv-wf and rpiv-mcp on PATH
+rpiv-wf --help
+```
+
+`--ignore-scripts` skips the root `prepare` hook (husky, a dev dependency a
+workspace-only install leaves out); praxis needs no install scripts. The
+global install links to the checkout, so `git pull` updates it. The rpiv
+Claude plugin (`packages/rpiv-pi/hosts/claude`) is committed; there is no build
+step. Authentication is Claude Code's own: whatever `claude` uses on the
+machine (`claude login`, or `ANTHROPIC_API_KEY`). Verified from a fresh clone:
+both commands install, and `rpiv-wf list`, `rpiv-wf steps` and an `rpiv-mcp`
+handshake work from any directory.
 
 ## Use
 
 ```sh
-npm install                                   # at the repo root
-npm run export:hosts                          # once: renders the rpiv Claude plugin
-
-node packages/rpiv-praxis/bin/rpiv-wf.mjs list
-node packages/rpiv-praxis/bin/rpiv-wf.mjs run ship "add a --json flag to the export command"
-node packages/rpiv-praxis/bin/rpiv-wf.mjs resume <run-id|name>
-node packages/rpiv-praxis/bin/rpiv-wf.mjs inbox
-node packages/rpiv-praxis/bin/rpiv-wf.mjs answer <run-id|name> <n> <choice>
-node packages/rpiv-praxis/bin/rpiv-wf.mjs steps
-node packages/rpiv-praxis/bin/rpiv-wf.mjs step research "how does token refresh work?"
+rpiv-wf list                                          # workflows (in the current project)
+rpiv-wf run ship "add a --json flag to the export command"
+rpiv-wf resume <run-id|name>
+rpiv-wf inbox                                         # questions runs are waiting on
+rpiv-wf answer <run-id|name> <n> <choice>
+rpiv-wf steps                                         # skills that run as single steps
+rpiv-wf step research "how does token refresh work?"
 ```
+
+Without the global install, `rpiv-wf` is
+`node <checkout>/packages/rpiv-praxis/bin/rpiv-wf.mjs`.
 
 | Flag | Default | |
 | --- | --- | --- |
 | `--name <name>` | workflow name | name the run; resume it by name |
-| `--model <id>` | Claude Code's | model for every stage (`claude-opus-5-5`, `sonnet`, `anthropic/…`) |
+| `--model <id>` | Claude Code's | model for every stage (`haiku`, `sonnet`, `claude-opus-5-5`, …) |
 | `--concurrency <n>` | `4` | parallel fan-out units |
 | `--permission-mode <mode>` | `auto` | Claude Code permission mode for each stage |
 | `--plugin-dir <dir>` | `rpiv-pi/hosts/claude` | the rpiv Claude plugin |
@@ -48,10 +68,92 @@ node packages/rpiv-praxis/bin/rpiv-wf.mjs step research "how does token refresh 
 | `--tools <a,b>` | all | built-in tools stages may use (`none` = no built-ins) |
 | `--disallowed-tools <a,b>` | none | tools removed from every stage |
 | `--setting-sources <a,b>` | `user,project,local` | what loads, CLAUDE.md included (`none` = nothing) |
+| `--max-cost <usd>` | none | stop once this invocation has cost this much |
+| `--timeout <minutes>` | none | stop this invocation after this long |
 
-Exit codes: `0` completed, `1` failed, `2` usage error, `75` parked (a stage is
-waiting on an answer), `130` interrupted (Ctrl-C stops the run at the current
-stage; resume picks it up).
+| Exit | Means | Next |
+| --- | --- | --- |
+| `0` | completed | |
+| `1` | failed (a stage or gate failed) | read the log; `resume` retries the failed stage |
+| `2` | usage error | |
+| `75` | parked: a stage is waiting on an answer | `inbox`, then `answer` |
+| `76` | stopped at `--max-cost` | `resume` |
+| `124` | stopped at `--timeout` | `resume` |
+| `130` | interrupted (Ctrl-C / SIGTERM) | `resume` |
+
+A stop (76, 124, 130) ends the current stage cleanly and the run resumes from
+it. `RPIV_WF_METRICS_FILE=<path>` makes `rpiv-wf` write the outcome, cost,
+tokens and tool calls as JSON at exit.
+
+## Overnight and unattended runs
+
+Everything a long run needs is in place: hard caps, exit codes a script can
+branch on, questions that wait instead of blocking, resume after any stop, and
+evals that survive a crash. What to set:
+
+- **Permissions.** The default `auto` mode lets Claude Code's classifier decide;
+  anything it would ask a person about is denied, and that stage may fail.
+  For a run nobody watches, use `--permission-mode bypassPermissions` **in a
+  disposable checkout, container or VM**: stages then run any tool without
+  asking. Questions still park (exit 75); they never hang. The SDK prints a
+  `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` warning in this mode; it is expected
+  (the callback still sees `AskUserQuestion`, which is all parking needs).
+- **Caps.** `--max-cost` and `--timeout` cover one invocation. A run resumed
+  three times can spend three caps, so a wrapper that resumes in a loop must
+  keep its own total (the metrics file has it). At the cost cap, turns already
+  running finish and their work is kept; no new turn starts. A run therefore
+  ends somewhat over its cap, by what was in flight, and if that was its last
+  stage it completes (exit 0). The timeout cuts running turns off; the
+  interrupted stage reruns on resume.
+- **Cheap models.** `--model haiku` for every stage; the memory-demo eval had
+  Haiku at about a sixth of Sonnet's cost. Other providers through an
+  Anthropic-compatible endpoint (a variant `env` of `ANTHROPIC_BASE_URL` and
+  `ANTHROPIC_AUTH_TOKEN`, which Claude Code honours) should work but are
+  **not verified** here; try one trial with `--max-cost` first.
+- **Detach it.** `tmux`, or `nohup rpiv-wf … > night.log 2>&1 &`. Progress
+  goes to stderr; the run log in `.rpiv/workflows/runs/` is the record.
+- **Morning.** `rpiv-wf inbox` for parked questions; failed and stopped runs
+  resume by name.
+
+**For a night of evals** (the usual way to see how far cheap models get):
+
+```json
+{
+  "name": "nightly-ship",
+  "fixture": "fixture",
+  "workflow": "ship",
+  "input": "add a --json flag to the export command",
+  "repeats": 5,
+  "parallel": 2,
+  "timeoutMinutes": 45,
+  "budgetUsd": 40,
+  "defaults": { "permissionMode": "bypassPermissions", "maxCostUsd": 4, "answers": ["1"] },
+  "variants": [{ "name": "haiku", "model": "haiku" }, { "name": "sonnet", "model": "sonnet" }],
+  "checks": [{ "name": "tests pass", "run": "npm test" }]
+}
+```
+
+```sh
+rpiv-wf eval nightly.json --dry-run          # the matrix, no spend
+nohup rpiv-wf eval nightly.json > eval.log 2>&1 &
+rpiv-wf eval --continue <results dir>        # after a crash, reboot or Ctrl-C
+```
+
+Each trial is recorded to `results.jsonl` as it finishes, so a crash loses at
+most the trials in flight; `--continue` runs only what is missing, against the
+spec saved with the results. `budgetUsd` stops *starting* trials once the eval
+has spent that much (exit 3); trials in flight finish. Each trial has its own
+`--timeout`; a trial still running 2 minutes past it gets SIGINT, then SIGKILL
+30 seconds later.
+A trial that parks with no scripted answer left ends as `parked` and counts
+as incomplete; `answers` (`"1"` = the first option) keeps a night moving.
+Trials run with `RPIV_WF_KATA=off`, so an eval never files tickets.
+
+Known limits: the cost a reattached stage spent before a failed run is
+counted again when `resume` reattaches it (reporting only; nothing is charged
+twice). A rate limit or usage cap from Anthropic fails the stage like any
+other error (expected from how errors are handled; not tested against a real
+limit); the run resumes once the limit lifts.
 
 ## Parked questions (human in the loop)
 
@@ -82,8 +184,6 @@ takes one free-text answer covering all of them); a park stops the whole run,
 so fan-out units still in flight are re-run on resume; parking needs the
 Claude Code host (Pi has its own in-session parking in the lane console).
 
-Authentication is Claude Code's own: whatever `claude` uses on the machine.
-
 ## Steps: one skill, full guarantees
 
 `rpiv-wf step <skill> [args]` runs a single skill as a one-stage workflow
@@ -104,8 +204,10 @@ ordinary run. Every rpiv skill is tested to load cleanly as a step.
 MCP client's config):
 
 ```json
-{ "mcpServers": { "rpiv": { "command": "node", "args": ["/path/to/rpiv-mono/packages/rpiv-praxis/bin/rpiv-mcp.mjs"] } } }
+{ "mcpServers": { "rpiv": { "command": "rpiv-mcp" } } }
 ```
+
+(without the global install: `"command": "node", "args": ["<checkout>/packages/rpiv-praxis/bin/rpiv-mcp.mjs"]`).
 
 | Tool | Does |
 | --- | --- |
@@ -113,7 +215,7 @@ MCP client's config):
 | `list_steps` | skills `run_step` can run, with source and kind |
 | `run_workflow` | start a workflow in the background; returns a run name |
 | `run_step` | start one skill as a checked step in the background; returns a run name |
-| `run_status` | `running` / `completed` / `failed` / `parked` / `interrupted`, stages, waiting question, log tail |
+| `run_status` | `running` / `completed` / `failed` / `parked` / `stopped-budget` / `stopped-timeout` / `interrupted`, stages, waiting question, log tail |
 | `inbox` | questions parked runs are waiting on |
 | `answer` | answer a parked question and resume its run (`resume: false` only records) |
 
@@ -131,8 +233,8 @@ the raw protocol, a step parked, `inbox` showed it, `answer` resumed it, and
 ## Evals: compare models, tools and memory on the same workflow
 
 ```sh
-node packages/rpiv-praxis/bin/rpiv-wf.mjs eval evals/memory-demo/spec.json --dry-run   # the matrix, no spend
-node packages/rpiv-praxis/bin/rpiv-wf.mjs eval evals/memory-demo/spec.json
+rpiv-wf eval packages/rpiv-praxis/evals/memory-demo/spec.json --dry-run   # the matrix, no spend
+rpiv-wf eval packages/rpiv-praxis/evals/memory-demo/spec.json
 ```
 
 A spec names one workflow (or one step), a fixture directory, and variants.
@@ -147,8 +249,9 @@ result. Output lands in `eval-results/<name>-<time>/` next to the spec:
 | `name`, `fixture` | eval name; directory copied fresh per trial (relative to the spec) |
 | `workflow` *or* `step`, `input` | what runs |
 | `repeats`, `parallel`, `timeoutMinutes` | trials per variant (default 1); concurrent trials (default 1); per-invocation timeout (default 30) |
+| `budgetUsd` | stop starting trials once the eval has spent this (exit 3) |
 | `defaults` | variant fields applied under every variant |
-| `variants[]` | `name` plus any of: `model`, `effort`, `permissionMode`, `tools` (list or `"none"`), `disallowedTools`, `settingSources` (`user`/`project`/`local` or `"none"`), `concurrency`, `env`, `setup` (shell, run in the copy first), `answers` |
+| `variants[]` | `name` plus any of: `model`, `effort`, `permissionMode`, `tools` (list or `"none"`), `disallowedTools`, `settingSources` (`user`/`project`/`local` or `"none"`), `concurrency`, `env`, `setup` (shell, run in the copy first), `answers`, `maxCostUsd` (per invocation) |
 | `answers` | a scripted person: a trial that parks is answered with these, in order, and resumed |
 | `checks[]` | `{ name, run }` — shell in the copy after the run; exit 0 = pass |
 
@@ -166,11 +269,7 @@ cumulatively (measured: $0.021 → $0.051 → $0.074 over three resumed calls),
 so the host charges each turn only the difference, and a parked question
 saves its session's total so the resumed turns start from it. Verified live:
 a trial that parked, was answered from `answers` and resumed was charged the
-parked session's $0.0610 once. One gap: a stage *reattached* by `resume` after
-a failed run starts with no baseline, so that stage's earlier cost is counted
-again.
-
-Every trial runs with `RPIV_WF_KATA=off`: an eval never files tickets.
+parked session's $0.0610 once.
 
 `evals/memory-demo/` is a working example: does the model follow an instruction
 that exists only in `CLAUDE.md`? First run (one trial each, so a lead, not a

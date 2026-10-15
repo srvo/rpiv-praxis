@@ -29,6 +29,8 @@ export const EXIT_STATE: Record<number, string> = {
 	1: "failed",
 	2: "usage-error",
 	75: "parked",
+	76: "stopped-budget",
+	124: "stopped-timeout",
 	130: "interrupted",
 };
 

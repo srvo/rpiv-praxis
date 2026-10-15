@@ -20,7 +20,8 @@
  * is installed), and `answer` resumes the stage in its own session.
  *
  * Exit codes: 0 completed, 1 failed, 2 usage error, 75 parked (waiting on an
- * answer), 130 interrupted.
+ * answer), 76 stopped at --max-cost, 124 stopped at --timeout, 130 interrupted.
+ * A stopped run is resumable like an interrupted one.
  */
 
 import { writeFileSync } from "node:fs";
@@ -36,7 +37,7 @@ import { defaultPluginDir, loadSkillCatalog, skillRegistryHost } from "./skills.
 import { registerStep, STEP_PREFIX, stepSkill, stepSkills, stepWorkflowName } from "./steps.js";
 import { addTurn, emptyTotals, listFlag } from "./usage.js";
 
-export const EXIT = { ok: 0, failed: 1, usage: 2, parked: 75, interrupted: 130 } as const;
+export const EXIT = { ok: 0, failed: 1, usage: 2, parked: 75, budget: 76, timeout: 124, interrupted: 130 } as const;
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 type Effort = (typeof EFFORTS)[number];
@@ -53,6 +54,7 @@ const USAGE = `usage:
   rpiv-wf step <skill> [args...] [options]
   rpiv-wf steps
   rpiv-wf eval <spec.json> [--dry-run] [--out <dir>]
+  rpiv-wf eval --continue <eval-results dir>   finish an interrupted eval
   rpiv-wf inbox
   rpiv-wf answer <run-id|name> <n> <choice...> [--no-resume] [options]
 
@@ -67,9 +69,14 @@ options:
   --tools <a,b,...>          built-in tools stages may use (none = no built-ins)
   --disallowed-tools <a,b>   tools removed from every stage
   --setting-sources <a,b>    user,project,local (default all; none = no settings or CLAUDE.md memory)
+  --max-cost <usd>           stop the run once it has cost this much (exit 76, resumable)
+  --timeout <minutes>        stop the run after this long (exit 124, resumable)
   --no-resume                answer: record the answer without resuming the run
 
-<choice> is an option number, an option label, or free text.`;
+<choice> is an option number, an option label, or free text.
+
+exit codes: 0 completed, 1 failed, 2 usage, 75 parked (answer it), 76 stopped at
+--max-cost, 124 stopped at --timeout, 130 interrupted. Stopped runs resume.`;
 
 export interface CliIo {
 	out: (line: string) => void;
@@ -142,7 +149,10 @@ export async function main(
 	} = {},
 ): Promise<number> {
 	let parsed: ReturnType<
-		typeof parseArgs<{ allowPositionals: true; options: Record<string, { type: "string" | "boolean" }> }>
+		typeof parseArgs<{
+			allowPositionals: true;
+			options: Record<string, { type: "string" | "boolean"; short?: string }>;
+		}>
 	>;
 	try {
 		parsed = parseArgs({
@@ -161,7 +171,11 @@ export async function main(
 				"disallowed-tools": { type: "string" },
 				"setting-sources": { type: "string" },
 				out: { type: "string" },
+				"max-cost": { type: "string" },
+				timeout: { type: "string" },
+				continue: { type: "string" },
 				"dry-run": { type: "boolean" },
+				help: { type: "boolean", short: "h" },
 			},
 		});
 	} catch (err) {
@@ -181,15 +195,34 @@ export async function main(
 		"disallowed-tools"?: string;
 		"setting-sources"?: string;
 		out?: string;
+		"max-cost"?: string;
+		timeout?: string;
+		continue?: string;
 		"dry-run"?: boolean;
+		help?: boolean;
 	};
 	const [command, target, ...rest] = parsed.positionals;
+	if (values.help || command === "help") {
+		io.out(USAGE);
+		return EXIT.ok;
+	}
 	const cwd = resolve(values.cwd ?? process.cwd());
 	const concurrency = Number(values.concurrency ?? 4);
 	const mode = (values["permission-mode"] ?? "auto") as PermissionMode;
 	if (!Number.isInteger(concurrency) || concurrency < 1) {
 		io.err(`--concurrency must be a positive integer\n${USAGE}`);
 		return EXIT.usage;
+	}
+	const maxCost = values["max-cost"] === undefined ? undefined : Number(values["max-cost"]);
+	const timeoutMin = values.timeout === undefined ? undefined : Number(values.timeout);
+	for (const [flag, v] of [
+		["--max-cost", maxCost],
+		["--timeout", timeoutMin],
+	] as const) {
+		if (v !== undefined && !(Number.isFinite(v) && v > 0)) {
+			io.err(`${flag} must be a positive number\n${USAGE}`);
+			return EXIT.usage;
+		}
 	}
 	if (values.effort !== undefined && !EFFORTS.includes(values.effort as Effort)) {
 		io.err(`unknown --effort "${values.effort}"\n${USAGE}`);
@@ -205,12 +238,18 @@ export async function main(
 		return EXIT.usage;
 	}
 	if (command === "eval") {
-		if (!target) {
+		if (!target && !values.continue) {
 			io.err(USAGE);
 			return EXIT.usage;
 		}
 		const { runEval } = await import("./eval.js");
-		return runEval(resolve(target), { outDir: values.out, dryRun: values["dry-run"], out: io.out });
+		return runEval(target ? resolve(target) : undefined, {
+			outDir: values.out,
+			dryRun: values["dry-run"],
+			continueDir: values.continue ? resolve(values.continue) : undefined,
+			out: io.out,
+			signal: inject.signal,
+		});
 	}
 
 	const needsTarget = command === "run" || command === "resume" || command === "step";
@@ -281,6 +320,24 @@ export async function main(
 	}
 	const totals = emptyTotals();
 	const stop = new AbortController();
+	const halt = new AbortController();
+	let limit: "budget" | "timeout" | undefined;
+	const stopFor = (why: "budget" | "timeout", message: string) => {
+		if (limit) return;
+		limit = why;
+		io.err(
+			why === "budget"
+				? `[warning] ${message}; finishing turns in flight, starting no new ones`
+				: `[warning] ${message}; stopping (resume with \`rpiv-wf resume\`)`,
+		);
+		// A budget stop lets running turns finish (their work is kept); a timeout cuts them off.
+		(why === "budget" ? halt : stop).abort();
+	};
+	const timer =
+		timeoutMin === undefined
+			? undefined
+			: setTimeout(() => stopFor("timeout", `--timeout ${timeoutMin} min reached`), timeoutMin * 60_000);
+	timer?.unref();
 	inject.signal?.addEventListener("abort", () => stop.abort(), { once: true });
 	if (inject.signal?.aborted) stop.abort();
 	const runParking = createRunParking({
@@ -299,13 +356,19 @@ export async function main(
 			maxConcurrency: concurrency,
 			model: values.model,
 			signal: stop.signal,
+			halt: halt.signal,
 			notify: (m, l = "info") => io.err(`[${l}] ${m}`),
 			parking: runParking.parking,
 			...(values.effort ? { effort: values.effort as Effort } : {}),
 			...(values.tools !== undefined ? { tools: listFlag(values.tools) } : {}),
 			...(values["disallowed-tools"] !== undefined ? { disallowedTools: listFlag(values["disallowed-tools"]) } : {}),
 			...(settingSources ? { settingSources: settingSources as SettingSource[] } : {}),
-			onUsage: (u) => addTurn(totals, u),
+			onUsage: (u) => {
+				addTurn(totals, u);
+				if (maxCost !== undefined && totals.costUsd >= maxCost) {
+					stopFor("budget", `--max-cost $${maxCost} reached ($${totals.costUsd.toFixed(4)})`);
+				}
+			},
 		},
 		inject.deps ?? (await defaultDeps()),
 	);
@@ -325,12 +388,16 @@ export async function main(
 					opts,
 				)
 			: await api.resumeWorkflowByRunId(host, resumeRef!, opts);
+	if (timer) clearTimeout(timer);
 	const parked = runParking.parked();
 	let code: number;
 	if (parked.length > 0) {
 		for (const p of parked) io.out(formatPark(p));
 		io.out(`parked: answer with \`rpiv-wf answer ${parked[0]!.runId} ${parked[0]!.n} <choice>\``);
 		code = EXIT.parked;
+	} else if (limit && !(limit === "budget" && result.success)) {
+		io.err(`stopped (${limit})${result.runId ? ` — run ${result.runId}` : ""}`);
+		code = limit === "budget" ? EXIT.budget : EXIT.timeout;
 	} else if (inject.signal?.aborted) {
 		io.err("interrupted");
 		code = EXIT.interrupted;
@@ -342,6 +409,7 @@ export async function main(
 		runId: result.runId ?? parked[0]?.runId ?? null,
 		stagesCompleted: result.stagesCompleted,
 		error: result.error ?? null,
+		stopped: limit ?? null,
 		parked: parked.map((p) => ({ n: p.n, stage: p.stage, question: p.questions[0]?.question })),
 		usage: totals,
 	});

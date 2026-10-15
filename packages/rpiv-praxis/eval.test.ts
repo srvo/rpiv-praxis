@@ -279,3 +279,74 @@ describe("summarize", () => {
 		expect(md).toContain("not a result");
 	});
 });
+
+describe("long unattended evals", () => {
+	it("passes the trial's time and cost caps to rpiv-wf", () => {
+		expect(variantFlags({ maxCostUsd: 2 }, "/w")).toEqual(["--cwd", "/w", "--max-cost", "2"]);
+		expect(specProblems({ ...spec, budgetUsd: 0, timeoutMinutes: -1 })).toEqual([
+			"timeoutMinutes: a positive number",
+			"budgetUsd: a positive number",
+		]);
+	});
+
+	it("stops starting trials once the eval budget is spent (exit 3)", async () => {
+		const { root, specFile } = fixture();
+		writeFileSync(specFile, JSON.stringify({ ...spec, budgetUsd: 0.4 }));
+		const out: string[] = [];
+		const code = await runEval(specFile, {
+			outDir: join(root, "res"),
+			out: (l) => out.push(l),
+			deps: fakeDeps().deps,
+		});
+		expect(code).toBe(3);
+		expect(out.filter((l) => l.startsWith("  done"))).toHaveLength(2);
+		expect(out.join("\n")).toContain("budget $0.4 reached ($0.5000): 2 trial(s) not started");
+	});
+
+	it("Ctrl-C stops starting trials and leaves the interrupted one for --continue (exit 130)", async () => {
+		const { root, specFile } = fixture();
+		const controller = new AbortController();
+		const { deps } = fakeDeps();
+		let wf = 0;
+		const interrupting: EvalDeps = {
+			...deps,
+			async run(cmd, args, o) {
+				if (cmd === "sh" || ++wf < 2) return deps.run(cmd, args, o);
+				controller.abort();
+				return { code: 130 };
+			},
+		};
+		const out: string[] = [];
+		const code = await runEval(specFile, {
+			outDir: join(root, "res"),
+			out: (l) => out.push(l),
+			deps: interrupting,
+			signal: controller.signal,
+		});
+		expect(code).toBe(130);
+		expect(wf).toBe(2);
+		const dir = out.find((l) => l.startsWith("results: "))!.replace("results: ", "");
+		expect(readFileSync(join(dir, "results.jsonl"), "utf8").trim().split("\n")).toHaveLength(1);
+		expect(out.at(-1)).toBe(`interrupted: 3 trial(s) not recorded; finish with: rpiv-wf eval --continue ${dir}`);
+	});
+
+	it("--continue runs only unrecorded trials, against the spec saved with the results", async () => {
+		const { root, specFile } = fixture();
+		const first: string[] = [];
+		await runEval(specFile, { outDir: join(root, "res"), out: (l) => first.push(l), deps: fakeDeps().deps });
+		const dir = first
+			.at(-1)!
+			.replace("summary: ", "")
+			.replace(/summary\.md$/, "");
+		// Simulate a crash: keep one finished trial plus a line cut short mid-write.
+		const lines = readFileSync(join(dir, "results.jsonl"), "utf8").trim().split("\n");
+		writeFileSync(join(dir, "results.jsonl"), `${lines[0]}\n${lines[1]!.slice(0, 20)}`);
+		writeFileSync(specFile, "{ not even json"); // edits to the original no longer matter
+		const { deps, calls } = fakeDeps();
+		const out: string[] = [];
+		expect(await runEval(undefined, { continueDir: dir, out: (l) => out.push(l), deps })).toBe(0);
+		expect(out[0]).toBe("4 trial(s): 2 variant(s) × 2 repeat(s); 1 already recorded, 3 to run");
+		expect(calls.filter((c) => c.cmd !== "sh")).toHaveLength(3);
+		expect(readFileSync(join(dir, "summary.md"), "utf8")).toContain("4 trial(s)");
+	});
+});

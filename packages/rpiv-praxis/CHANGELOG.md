@@ -16,4 +16,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Renamed from `rpiv-claude` to `@ethicalcapital/rpiv-praxis`.
 - Evals: `rpiv-wf eval <spec.json> [--dry-run] [--out <dir>]` runs a workflow or step across variants in fresh fixture copies, answers parks from a script, runs checks, and writes `results.jsonl` and `summary.md`. Example: `evals/memory-demo/`.
 - `rpiv-wf` flags `--effort`, `--tools`, `--disallowed-tools`, `--setting-sources`; `$RPIV_WF_METRICS_FILE` receives the run's outcome and usage at exit.
+- Unattended runs: `--max-cost <usd>` (exit `76`; turns in flight finish and are kept, no new turn starts) and `--timeout <minutes>` (exit `124`), both resumable. Evals gain `budgetUsd` (stop starting trials, exit `3`), per-variant `maxCostUsd`, a per-trial timeout with a SIGINT→SIGKILL backstop, `--continue <results dir>` to finish an interrupted eval against its saved spec, and Ctrl-C that leaves interrupted trials unrecorded for `--continue` (exit `130`). `rpiv-mcp`'s `run_status` reports `stopped-budget` and `stopped-timeout`.
+- `rpiv-wf --help` (`-h`, `help`) prints usage, including exit codes, and exits 0.
+- README: installing praxis alone from a checkout, a flags and exit-code reference, and a guide to overnight runs.
 - Usage is reported per turn: the SDK's cumulative totals for resumed and forked sessions are turned into differences, and a parked session's total is saved so its resumed turns start from it.

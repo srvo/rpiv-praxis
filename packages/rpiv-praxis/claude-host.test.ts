@@ -173,6 +173,23 @@ describe("ClaudeWorkflowHost — fresh stage", () => {
 		expect(lastAssistant(branch).stopReason).toBe("aborted");
 	});
 
+	it("a halt lets the running turn finish and keeps it, but starts no new turn", async () => {
+		const halt = new AbortController();
+		const sdk = fakeSdk([
+			() => {
+				halt.abort(); // --max-cost reached during this turn
+				return [init("s1"), say("s1", "done"), result("s1")];
+			},
+		]);
+		const { branch } = await run(host(sdk.deps, { halt: halt.signal }).h, {}, async (c) => {
+			expect(lastAssistant(c.sessionManager.getBranch() as BranchEntry[]).stopReason).toBe("stop");
+			await c.sendUserMessage("/skill:note again");
+			await c.waitForIdle();
+		});
+		expect(sdk.calls).toHaveLength(1);
+		expect(lastAssistant(branch).stopReason).toBe("aborted");
+	});
+
 	it("applies the stage's model selection", async () => {
 		const sdk = fakeSdk([() => [result("s1")]]);
 		await run(host(sdk.deps).h, { model: { model: "anthropic/claude-opus-5-5", thinking: "xhigh" } });

@@ -55,6 +55,12 @@ export interface ClaudeHostOptions {
 	/** Model for every stage unless the workflow's own selection names one. */
 	model?: string;
 	signal?: AbortSignal;
+	/**
+	 * Soft stop (--max-cost): turns already running finish and are kept; no new
+	 * turn starts. The runner's signal stays cold, so a stage that just finished
+	 * is recorded rather than thrown away and redone on resume.
+	 */
+	halt?: AbortSignal;
 	notify?: (message: string, level?: "info" | "warning" | "error") => void;
 	/** Override session-file lookup (tests). */
 	locate?: (sessionId: string) => string | undefined;
@@ -402,7 +408,7 @@ class ClaudeChildSession implements WorkflowSessionContext {
 	private async turn(prompt: string): Promise<void> {
 		const start = this.branch.length;
 		this.branch.push(userEntry(prompt));
-		if (this.abort.signal.aborted) {
+		if (this.abort.signal.aborted || this.opts.halt?.aborted) {
 			stampStop(this.branch, "aborted", start);
 			return;
 		}

@@ -49,7 +49,7 @@ Five packages you do not `pi install`. One is on npm as a library; four are `pri
 | --- | --- | --- |
 | [`rpiv-config`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-config) | Shared XDG-aware JSON config I/O for the siblings | Published as a library: `npm install @juicesharp/rpiv-config`. Not a Pi extension — it registers nothing, and ten siblings already pull it in as a dependency. [npm](https://www.npmjs.com/package/@juicesharp/rpiv-config) |
 | [`rpiv-telemetry`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-telemetry) | MLflow observability — auto-instruments lifecycle + sub-agent activity | **Not published.** Inside this repo Pi loads it through the workspace symlink; elsewhere, point Pi at a checkout: `pi install ./packages/rpiv-telemetry` |
-| [`rpiv-praxis`](./packages/rpiv-praxis) | `rpiv-wf`: runs `/wf` workflows headless on Claude Code through the Claude Agent SDK | **Not published.** Run from a checkout: `node packages/rpiv-praxis/bin/rpiv-wf.mjs run <workflow> "<brief>"` |
+| [`rpiv-praxis`](./packages/rpiv-praxis) | `rpiv-wf`: runs `/wf` workflows headless on Claude Code through the Claude Agent SDK | **Not published.** Install just this package from a checkout: `npm install --workspace @ethicalcapital/rpiv-praxis --ignore-scripts` ([details](./packages/rpiv-praxis/README.md#install-just-praxis)) |
 | [`rpiv-site`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-site) | The [rpiv-pi.com](https://rpiv-pi.com) site (static Astro build) | **Not published.** Built from this repo with `npm run build:site`, deployed to GitHub Pages by CI |
 | [`test-utils`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/test-utils) | Shared test fixtures (`@juicesharp/rpiv-test-utils`) | **Not published.** Symlinked by npm workspaces; imported by the test suite only |
 
@@ -120,8 +120,8 @@ Upstream runs whole workflows; an agent cannot call one step on its own or start
 
 - **Steps** — `rpiv-wf step <skill> [args]` runs any one skill as a single-stage workflow with the full guarantees: output checked against the skill's contract, logged, parkable, resumable. `rpiv-wf steps` lists them (rpiv's, the project's, the user's).
 - **`rpiv-mcp`** — an MCP server exposing `list_workflows`, `list_steps`, `run_workflow`, `run_step`, `run_status`, `inbox`, `answer`. Runs start in the background and return a name to poll, so an agent can fan out across steps and workflows itself.
-
 - **Evals** — `rpiv-wf eval spec.json` runs one workflow or step across variants (model, effort, tool set, which settings and CLAUDE.md memory load, setup commands) in fresh fixture copies, answers parked questions from a script, runs pass/fail checks, and writes `results.jsonl` plus a side-by-side `summary.md` with cost and tokens.
+- **Unattended runs** — `--max-cost` and `--timeout` caps with distinct, resumable exit codes; eval-wide `budgetUsd`; `rpiv-wf eval --continue` after a crash or Ctrl-C. Guide: [overnight and unattended runs](./packages/rpiv-praxis/README.md#overnight-and-unattended-runs).
 
 Verified live: a Claude Code agent given the server ran a step in two projects in parallel and reported both completed; the `memory-demo` eval showed an instruction in `CLAUDE.md` followed with memory loaded and ignored without it. Details: [packages/rpiv-praxis/README.md](./packages/rpiv-praxis/README.md#mcp-tools-rpiv-as-building-blocks-for-any-agent).
 
