@@ -39,6 +39,7 @@
 			"!**/thoughts",
 			"!**/docs",
 			"!**/dist",
+			"!packages/rpiv-pi/hosts",
 			"!**/.astro"
 		]
 	}

@@ -7,6 +7,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `npm run export:hosts` renders the skills and subagents for other harnesses into `hosts/`: a Claude Code plugin (`rpiv`, with a marketplace entry at the repo root) and a portable Agent Skills pack for Codex, OpenCode, Factory and similar. The output is committed; `npm run check:hosts` fails CI when it drifts from `skills/` or `agents/`.
+
 ## [2.13.9] - 2026-10-17
 
 ### Changed

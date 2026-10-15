@@ -49,6 +49,22 @@ Four packages you do not `pi install`. One is on npm as a library; three are `pr
 | [`rpiv-site`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-site) | The [rpiv-pi.com](https://rpiv-pi.com) site (static Astro build) | **Not published.** Built from this repo with `npm run build:site`, deployed to GitHub Pages by CI |
 | [`test-utils`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/test-utils) | Shared test fixtures (`@juicesharp/rpiv-test-utils`) | **Not published.** Symlinked by npm workspaces; imported by the test suite only |
 
+## Other harnesses: Claude Code, Codex, OpenCode, Factory
+
+The skills and subagents are authored once, for Pi, in `packages/rpiv-pi/skills/` and `packages/rpiv-pi/agents/`. `npm run export:hosts` renders them into `packages/rpiv-pi/hosts/`, which is generated and committed so any harness can install straight from git. CI runs `npm run check:hosts` and fails when the two drift; never edit `hosts/` by hand.
+
+| Host | Output | Install |
+| --- | --- | --- |
+| Claude Code | `hosts/claude/`, a plugin named `rpiv` (31 skills, 15 subagents) | `/plugin marketplace add ethicalcapital/rpiv-mono`, then `/plugin install rpiv@rpiv`. Skills run as `/rpiv:plan`, `/rpiv:implement`, …; subagents register as `rpiv:codebase-locator`, … For one session: `claude --plugin-dir packages/rpiv-pi/hosts/claude` |
+| Agent Skills (Codex, OpenCode, Factory, Cursor, …) | `hosts/agents/` (`skills/`, `agents/`, `scripts/`) | Copy or symlink `hosts/agents/skills/*` into the harness's skills directory (for example `.agents/skills/`), keeping `_shared/` beside them and `scripts/` two levels up |
+
+What the export changes, and what it cannot carry:
+
+- **Claude Code** keeps `$ARGUMENTS` and ```` ```! ```` context blocks, which rpiv-args already mirrors. It swaps `${SKILL_DIR}` for `${CLAUDE_SKILL_DIR}`, `/skill:x` for `/rpiv:x`, `ask_user_question` for `AskUserQuestion`, Pi tool names for Claude's, and namespaces subagent names. Each skill gets an exact `allowed-tools` grant for the `node` helpers its ```` ```! ```` blocks run, because Claude Code refuses to load a skill whose context commands are not approved.
+- **Agent Skills** frontmatter is cut to `name` and `description`; ```` ```! ```` blocks become "run these commands first" steps, and a preamble tells the model what to do when a harness lacks subagents or a named tool.
+- **Pi-only:** the `/wf` workflow runner, `advisor` (skills already fall back to an inline path when it is absent), per-agent model routing from `models.json`, and the rpiv-pi extension itself.
+- The exporter fails closed: an agent tool with no Claude mapping, a `/skill:` that names no skill, or a positional `$1` (1-based in rpiv-args, 0-based in Claude Code) stops the export.
+
 ## Roadmap
 
 > [!NOTE]

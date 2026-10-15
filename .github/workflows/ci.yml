@@ -35,6 +35,8 @@ jobs:
 
       - run: npm run check:file-sizes
 
+      - run: npm run check:hosts
+
       - run: npm run check
 
       - run: npm run coverage -- --reporter=default --reporter=json --outputFile=test-results.json

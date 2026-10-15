@@ -15,6 +15,7 @@ Keeping an experienced driver in the loop while the work moves at LLM speed. Com
 - `panel()` — N judges + vote fold (adversarial verification), with `match()` enum-gate disagreement routing
 - Session-backed, mid-loop resume
 - Skill-contract architecture (load-time + runtime schema checks)
+- Skills and subagents exported to Claude Code (plugin) and Agent Skills harnesses (`npm run export:hosts`)
 - Sibling family — `ask-user-question`, `todo`, `advisor`, `web-tools`, `args`, `i18n`, `btw`, `voice`, `warp`, `telemetry`
 
 ## What's Next
@@ -28,7 +29,7 @@ Keeping an experienced driver in the loop while the work moves at LLM speed. Com
 ## What's Possible
 
 - Telemetry public release
-- Non-Pi host embedding
+- Non-Pi host embedding of the `/wf` runner (skills and subagents already export)
 - Ecosystem / extensibility (third-party skill contracts, user workflow packs)
 - Tournament bracket ranking
 - Worktree isolation — parallelize shared-tree stages (`implement`) safely

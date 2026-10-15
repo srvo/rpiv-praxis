@@ -18,10 +18,10 @@
 //   they get a higher new-file cap, not a free pass.
 //
 // WHY THESE EXCLUSIONS
-//   node_modules and __fixtures__ are installed or fixture trees, not authored
-//   surface (skipped anywhere in the walk); declaration twins (.d.ts / .d.mts)
-//   are emitted, not hand-written. GUARDED_ROOTS deliberately stays at
-//   packages/rpiv-pi — the authoring tier this guard was cut for; widening to
+//   node_modules and __fixtures__ are installed or fixture trees, and hosts/ is
+//   export-hosts.ts output — none of them authored surface (skipped anywhere in
+//   the walk); declaration twins (.d.ts / .d.mts) are emitted, not hand-written.
+//   GUARDED_ROOTS deliberately stays at packages/rpiv-pi — the authoring tier this guard was cut for; widening to
 //   the whole repo is a one-constant edit once the other packages have been
 //   baselined deliberately.
 //
@@ -46,7 +46,7 @@ import { fileURLToPath } from "node:url";
 // Single tune point — recalibrate here, never inline.
 const GUARDED_ROOTS = ["packages/rpiv-pi"];
 const COUNTED_EXT = new Set([".ts", ".mjs", ".js"]);
-const SKIP_DIRS = new Set(["node_modules", "__fixtures__"]); // skipped anywhere in the walk
+const SKIP_DIRS = new Set(["node_modules", "__fixtures__", "hosts"]); // skipped anywhere in the walk
 const SKIP_EXT = new Set([".d.ts", ".d.mts"]); // suffix-matched: extname() of a declaration twin is ".ts"
 const TOLERANCE_PCT = 10; // baselined files may grow this percent per cycle ...
 const FLAT_ALLOWANCE = 50; // ... or this many flat lines, whichever is larger

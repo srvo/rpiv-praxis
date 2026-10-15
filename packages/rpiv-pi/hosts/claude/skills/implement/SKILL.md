@@ -1,0 +1,166 @@
+---
+name: implement
+description: Execute an approved implementation plan from .rpiv/artifacts/plans/ phase by phase, applying changes and verifying each phase against its success criteria before moving on. Use when the user invokes /implement, asks to "implement this plan", or wants an existing phased plan executed. Pair with revise to update plans mid-flight and validate to confirm completion.
+argument-hint: "[plan-path] [Phase N]"
+allowed-tools: Read, Edit, Write, Bash(*), Glob, Grep
+disable-model-invocation: true
+---
+
+# Implement
+
+You are tasked with implementing an approved technical plan from `.rpiv/artifacts/plans/`. These plans contain phases with specific changes and success criteria.
+
+## Input
+
+$ARGUMENTS
+
+The input above is `<plan-path> [phase]`:
+- First token is the plan path under `.rpiv/artifacts/plans/`.
+- Anything after it (e.g. "Phase 2") names a single phase to scope to.
+
+Rules:
+- If a phase is named → **single-phase (sequenced lane) mode.** Phases run **sequentially, in the plan's dependency order**, so every earlier phase has **already landed its files** — your prerequisites are present in the working tree. Implement **ONLY the named phase**, touching **only the files that phase owns**. Hard rules for this mode:
+  - **Never implement, create, or edit another phase's files** — not even if one is missing. You are one unit of a sequenced run; back-filling another phase's work duplicates it and corrupts the next lane.
+  - **A genuinely missing prerequisite is a hard error, not a decision.** If a file your phase must read or edit (one an earlier phase owns) is absent, **STOP and fail** with `prerequisite missing: <path> (expected from an earlier phase)`. Do **not** create it, do **not** `AskUserQuestion` about it, and do **not** defer your own edits — fail loudly so the run surfaces the ordering defect.
+  - **Never silently defer your phase's own edits.** Apply every change the named phase owns, or fail. A phase that writes a partial slice and checks off nothing is worse than a clean failure.
+  - **Repo-located scratch lives under `.rpiv/tmp/`, nowhere else.** Any file you create that is not in your phase's `files:` — a probe script, a fixture, a captured payload — goes under `.rpiv/tmp/` (exempt from the workflow's scope floor) or outside the repo entirely. The floor counts **untracked** files too (`git status -uall`): a scratch file left at the repo root or in an undeclared directory is an undeclared write the downstream `implement-scope-check` flags. Delete repo-located scratch when you're done with it regardless.
+  - Do not read, edit, or check off other phases' sections. Stop and print the closing block as soon as the named phase's own success criteria pass.
+  - **Record a `#### Reconciliation` directive for cross-phase test updates you can't apply yourself.** Under build/vet's parallel implement lane, a correct change in YOUR phase can invalidate a test expectation that lives in a SIBLING phase's landed section — and single-phase mode forbids editing another phase's files. Do NOT edit the sibling's file and do NOT silently skip it: record a `#### Reconciliation` directive in your OWN phase's section. The directive is a machine-findable, machine-applicable `find → replace` against a single repo-root-relative target, so the downstream `reconcile` stage can apply it write-restricted to the plan's declared write-set:
+    ```
+    #### Reconciliation
+    - `path/to/x.test.ts`: replace `expect(r).toBe(3)` → `expect(r).toBe(4)` — <one-line rationale>
+    ```
+    The `find`/`replace` spans may span multiple lines, but must carry **no inner backticks** — the spans are backtick-delimited, so a snippet containing a backtick (a template literal, markdown-in-a-test) is inexpressible in this form. For such content use the **fenced form**: the same `- `<target>`: replace — <rationale>` header with NO inline spans, followed by a `find:` line + a fenced code block, then a `replace:` line + a fenced code block (indent the blocks under the list item; the fence line's own indentation is stripped from the captured content):
+    ````
+    #### Reconciliation
+    - `path/to/x.test.ts`: replace — <one-line rationale>
+      find:
+      ```
+      const s = `a ${b} c`;
+      ```
+      replace:
+      ```
+      const s = `a ${b} c d`;
+      ```
+    ````
+    The target MUST be in the plan's declared write-set — the union of every phase's `files:`, twin-expanded (`x.ts` licenses `x.test.ts`) — the same authority the scope floor enforces; eligibility is plan-derived, never a filename convention, so any language's test or expectation file qualifies once declared. `reconcile` rejects (and reports) a directive against an undeclared path — route such an edit through validate's remediation arm or the owning phase. Record directives only for MECHANICAL expectation/consistency updates you can state concretely; a real logic change in a sibling's files is plan-level work (`/rpiv:revise`), not a reconciliation directive.
+
+    When you record one: Read the target file first and copy the `find` bytes verbatim from its live content (never from memory — `reconcile` matches raw bytes and does not guess); any backtick in a span forces the fenced form (the inline grammar cannot express it). Then verify with `node "${CLAUDE_SKILL_DIR}/../_shared/reconcile-lint.mjs" <plan-path> --phase <N>` — the gate's own parser in check-only mode — and fix every finding it prints before your closing block. Each defect the lint catches is one amend session and a gate fix round that never happens.
+- If no phase is named → **sequential full-plan mode:** implement every phase in the plan sequentially.
+- If the input is empty or the plan path is missing/literal, ask the user for the plan path before proceeding.
+
+## Getting Started
+
+With a plan path in hand:
+- Read the plan completely for context (overview, ordering constraints, other phases' file changes yours may build on). In **single-phase mode**, do **not** scan for checkmarks as a resume signal: any `- [x]` outside the named phase is a sibling lane's in-flight progress, not prior-completed work. Checkmarks only matter within the named phase's own section.
+- Read the original ticket and all files mentioned in the plan
+- **Read files fully** - never use limit/offset parameters, you need complete context
+- Think deeply about how the pieces fit together
+- Create a todo list to track your progress
+- Start implementing if you understand what needs to be done
+
+## Implementation Philosophy
+
+Plans are carefully designed, but reality can be messy. Your job is to:
+- Follow the plan's intent while adapting to what you find
+- In sequential full-plan mode, implement each phase fully before starting the next. In **single-phase mode** there is no "next" — you implement only the named phase (its prior phases run concurrently in other lanes and are not guaranteed done)
+- Verify your work makes sense in the broader codebase context
+- Update checkboxes in the plan as you complete sections — in **single-phase mode**, only within the named phase's own section; never touch another phase's `- [ ]` / `- [x]`
+
+When things don't match the plan exactly, think about why and communicate clearly. The plan is your guide, but your judgment matters too.
+
+If you encounter a mismatch:
+- STOP and think deeply about why the plan can't be followed
+- Present the issue clearly:
+  ```
+  Issue in Phase {N}:
+  Expected: {what the plan says}
+  Found: {actual situation}
+  Why this matters: {explanation}
+
+  ```
+
+  `Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
+  Use the `AskUserQuestion` tool to resolve the mismatch. Question: "{Brief summary of the mismatch}". Header: "Mismatch". Options: "Follow the plan" (Adapt the plan's approach to the current code state); "Skip this change" (Move on without this change — it may not be needed); "Update the plan" (The plan needs to be revised before continuing).
+
+## Verification Approach
+
+After implementing a phase:
+- **Sequential full-plan mode:** run the plan's own whole-plan success-criteria commands (the project's build + test commands, as recorded in its guidance `# Commands` table).
+- **Single-phase mode:** run **only the commands under the named phase's own `#### Automated Verification:` block** — and flip exactly those `- [ ]` → `- [x]`. Do **not** gate completion on the project's whole-repo build/test command: that runs sibling phases' not-yet-present code and is the downstream `validate` stage's job (whole-plan / cross-phase validation), not implement's. Under build's parallel implement lane, sibling phases run concurrently in the same working tree; the tree shows their in-flight changes — verify only your own phase's `files:`, and keep every command you run write-scoped to that set (a command that rewrites the wider tree corrupts a sibling's in-flight edit; narrow any formatter/auto-fixer to the phase's paths).
+- Fix any issues before proceeding
+- Update your progress in both the plan and your todos
+- Check off completed items in the plan file itself using Edit
+  - Anchor each checkbox-flip `Edit` on the **full unique line** — the item's phase-specific tail (the verification command, file path, or criterion text), never just the shared `- [ ]`/`- [x]` prefix. That shared prefix repeats identically across phases, so a prefix-only anchor collides and Pi rejects the whole atomic edit batch with a "Found N occurrences" error (an observed run lost an atomic 9-edit batch this way). A full-line anchor is unique per item.
+- If the input scopes you to a single phase, stop immediately after the named phase's own checks pass — do not advance to other phases
+
+Don't let verification interrupt your flow - batch it at natural stopping points.
+
+## If You Get Stuck
+
+When something isn't working as expected:
+- First, make sure you've read and understood all the relevant code
+- Consider if the codebase has evolved since the plan was written
+- Present the mismatch clearly and ask for guidance
+
+Use skills sparingly - mainly for targeted debugging or exploring unfamiliar territory.
+
+## Resuming Work
+
+These resume heuristics assume **sequential** accumulation and apply to **sequential full-plan mode** only:
+- Trust that completed work is done
+- Pick up from the first unchecked item
+- Verify previous work only if something seems off
+
+In **single-phase mode**, ignore checkmarks outside the named phase entirely — they are sibling lanes' parallel progress, not a base to build on. Resume logic applies **only within the named phase's own section**: if your phase's own `#### Automated Verification:` items are already `- [x]` from a prior run of this same lane, trust those; otherwise implement the named phase's changes per the plan regardless of checkbox state elsewhere.
+
+Remember: You're implementing a solution, not just checking boxes. Keep the end goal in mind and maintain forward momentum.
+
+## Present and Chain
+
+When the last in-scope phase is complete, print the **completion** closing block:
+
+```
+Implementation complete:
+`.rpiv/artifacts/plans/{filename}.md`
+
+{P} phases completed, {M} files changed, {T} tests passing.
+Outstanding: none.
+
+Please review the diff and let me know if anything should reopen a phase.
+
+---
+
+💬 Follow-up: surface code/plan mismatches inline via the `AskUserQuestion` flow ("Follow the plan / Skip this change / Update the plan") — that is implement's only in-skill follow-up surface. For plan-level changes run `/rpiv:revise <plan-path>`; for session pauses run `/rpiv:create-handoff`.
+
+**Next step:** `/rpiv:validate .rpiv/artifacts/plans/{filename}.md` — verify the implementation against the plan's success criteria before committing.
+
+> 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+```
+
+If the run was paused mid-plan rather than completed, print the **paused** variant instead:
+
+```
+Implementation paused at Phase {N}:
+`.rpiv/artifacts/plans/{filename}.md`
+
+{P} phases completed, {M} files changed, {T} tests passing.
+Outstanding: {list of unchecked items, blockers}.
+
+Please review what landed and let me know if anything needs to change before resuming.
+
+---
+
+💬 Follow-up: surface code/plan mismatches inline via the `AskUserQuestion` flow ("Follow the plan / Skip this change / Update the plan") — that is implement's only in-skill follow-up surface. For plan-level changes run `/rpiv:revise <plan-path>` first.
+
+**Next step:** `/rpiv:create-handoff` — capture in-flight state so the next session can resume cleanly via `/rpiv:resume-handoff`.
+
+> 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+```
+
+## Handle Follow-ups
+
+- **Implement owns checkboxes, not plan content.** Check off `#### Automated Verification:` items `- [ ]` → `- [x]` as each phase's checks pass. Everything else is revise's — run `/rpiv:revise <plan-path>`; never rewrite plan content from inside implement.
+- **For plan-level changes.** Run `/rpiv:revise <plan-path>` first — it appends a timestamped Follow-up section to the plan and preserves history. Then resume implement at the affected phase.
+- **For session pauses.** Run `/rpiv:create-handoff` to capture in-flight state, then `/new` and `/rpiv:resume-handoff` in the next session.
+- **Mismatch handling stays inline.** When code reality diverges from the plan, use the inline `AskUserQuestion` flow ("Follow the plan / Skip this change / Update the plan") — that is implement's only follow-up surface; everything else escalates to revise or create-handoff.
