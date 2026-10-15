@@ -5,6 +5,8 @@ import type { RunWorkflowResult } from "@juicesharp/rpiv-workflow";
 import { describe, expect, it, vi } from "vitest";
 import type { ClaudeHostDeps } from "./claude-host.js";
 import { EXIT, main, type WorkflowApi } from "./cli.js";
+import type { Kata } from "./kata.js";
+import { addPark, readParks, runsDir, updatePark } from "./park-store.js";
 
 function plugin(): string {
 	const dir = mkdtempSync(join(tmpdir(), "rpiv-cli-plugin-"));
@@ -25,7 +27,7 @@ function harness(result: RunWorkflowResult = { success: true, stagesCompleted: 2
 	};
 	const deps = { query: vi.fn(), forkSession: vi.fn() } as unknown as ClaudeHostDeps;
 	const go = (args: string[], signal?: AbortSignal) =>
-		main(args, { out: (l) => out.push(l), err: (l) => err.push(l) }, { api, deps, signal });
+		main(args, { out: (l) => out.push(l), err: (l) => err.push(l) }, { api, deps, signal, kata: null });
 	return { go, api, out, err };
 }
 
@@ -118,5 +120,110 @@ describe("rpiv-wf", () => {
 		const code = await main(["run", "x", "--plugin-dir", plugin()], { out: () => {}, err: () => {} }, { api });
 		expect(code).toBe(EXIT.ok);
 		expect(api.runWorkflowByName).toHaveBeenCalledOnce();
+	});
+});
+
+describe("rpiv-wf parked questions", () => {
+	const ask = { question: "Red or blue?", options: [{ label: "Red" }, { label: "Blue" }] };
+	const project = () => {
+		const cwd = mkdtempSync(join(tmpdir(), "rpiv-cli-park-"));
+		mkdirSync(runsDir(cwd), { recursive: true });
+		writeFileSync(join(runsDir(cwd), "r1.jsonl"), "{}\n");
+		writeFileSync(join(runsDir(cwd), "names.json"), JSON.stringify({ shed: "r1" }));
+		return cwd;
+	};
+	const park = (cwd: string) =>
+		addPark(cwd, {
+			runId: "r1",
+			workflow: "wf",
+			stage: "pick",
+			prompt: "/skill:pick",
+			sessionId: "s1",
+			questions: [ask],
+		});
+	const io = () => {
+		const out: string[] = [];
+		const err: string[] = [];
+		return { out, err, io: { out: (l: string) => out.push(l), err: (l: string) => err.push(l) } };
+	};
+
+	it("inbox lists what is waiting, or says nothing is", async () => {
+		const cwd = project();
+		const a = io();
+		expect(await main(["inbox", "--cwd", cwd], a.io)).toBe(EXIT.ok);
+		expect(a.out).toEqual(["nothing waiting"]);
+		park(cwd);
+		const b = io();
+		await main(["inbox", "--cwd", cwd], b.io);
+		expect(b.out.join("\n")).toContain("Red or blue?");
+	});
+
+	it("answer --no-resume records the choice by number and closes the ticket", async () => {
+		const cwd = project();
+		addPark(cwd, { runId: "r1", prompt: "p", sessionId: "s", questions: [ask], kata: "ab12" } as never);
+		const kata: Kata = { file: vi.fn(), close: vi.fn() };
+		const h = harness();
+		const a = io();
+		const code = await main(["answer", "shed", "1", "2", "--no-resume", "--cwd", cwd], a.io, { api: h.api, kata });
+		expect(code).toBe(EXIT.ok);
+		expect(readParks(cwd, "r1")[0]).toMatchObject({ status: "answered", answer: "Blue" });
+		expect(vi.mocked(kata.close).mock.calls[0]![0]).toMatchObject({ kata: "ab12", answer: "Blue" });
+		expect(h.api.resumeWorkflowByRunId).not.toHaveBeenCalled();
+	});
+
+	it("answer resumes the run by id", async () => {
+		const cwd = project();
+		park(cwd);
+		const h = harness();
+		const code = await main(["answer", "shed", "1", "Red", "--cwd", cwd, "--plugin-dir", plugin()], io().io, {
+			api: h.api,
+			deps: { query: vi.fn(), forkSession: vi.fn() } as never,
+			kata: null,
+		});
+		expect(code).toBe(EXIT.ok);
+		expect(vi.mocked(h.api.resumeWorkflowByRunId).mock.calls[0]![1]).toBe("r1");
+	});
+
+	it("answer refuses an unknown or already delivered question", async () => {
+		const cwd = project();
+		park(cwd);
+		const a = io();
+		expect(await main(["answer", "shed", "7", "Red", "--cwd", cwd], a.io, { api: harness().api, kata: null })).toBe(
+			EXIT.usage,
+		);
+		expect(await main(["answer", "nope", "1", "Red", "--cwd", cwd], a.io, { api: harness().api, kata: null })).toBe(
+			EXIT.usage,
+		);
+		updatePark(cwd, "r1", 1, { status: "resumed" });
+		expect(await main(["answer", "shed", "1", "Red", "--cwd", cwd], a.io, { api: harness().api, kata: null })).toBe(
+			EXIT.usage,
+		);
+		expect(await main(["answer", "shed", "1", "--cwd", cwd], a.io, { api: harness().api, kata: null })).toBe(
+			EXIT.usage,
+		);
+	});
+
+	it("a run that parks exits 75 and prints the answer command", async () => {
+		const cwd = project();
+		const h = harness({ success: false, stagesCompleted: 0, runId: "r9" });
+		vi.mocked(h.api.runWorkflowByName).mockImplementationOnce(async (ctx, _n, _i, opts) => {
+			const o = opts as { lifecycle: { onWorkflowStart(c: unknown): void } };
+			o.lifecycle.onWorkflowStart({ runId: "r9", workflow: "wf" });
+			(ctx as unknown as { opts: { parking: { park(i: unknown): void } } }).opts.parking.park({
+				prompt: "/skill:pick",
+				sessionId: "s1",
+				questions: [ask],
+			});
+			return { success: false, stagesCompleted: 0, runId: "r9" };
+		});
+		const a = io();
+		const code = await main(["run", "wf", "--cwd", cwd, "--plugin-dir", plugin()], a.io, {
+			api: h.api,
+			deps: { query: vi.fn(), forkSession: vi.fn() } as never,
+			kata: null,
+		});
+		expect(code).toBe(EXIT.parked);
+		expect(a.out.at(-1)).toBe("parked: answer with `rpiv-wf answer r9 1 <choice>`");
+		expect(readParks(cwd, "r9")).toHaveLength(1);
 	});
 });

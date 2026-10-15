@@ -3,20 +3,28 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BranchEntry, WorkflowSessionContext } from "@juicesharp/rpiv-workflow";
 import { describe, expect, it, vi } from "vitest";
-import { type ClaudeHostDeps, ClaudeWorkflowHost, childEnv, claudeModel } from "./claude-host.js";
+import {
+	type ClaudeHostDeps,
+	ClaudeWorkflowHost,
+	childEnv,
+	claudeModel,
+	PARKED_MESSAGE,
+	type Parking,
+} from "./claude-host.js";
 
 type Call = { prompt: string; options: Record<string, any> };
 
 /** A fake SDK: each `query` call yields the scripted messages for that turn. */
-function fakeSdk(turns: Array<(call: Call) => unknown[] | Promise<never>>) {
+function fakeSdk(turns: Array<(call: Call) => unknown[] | Promise<never> | AsyncIterable<unknown>>) {
 	const calls: Call[] = [];
 	const query = vi.fn((params: { prompt: string; options: Record<string, any> }) => {
 		const call = { prompt: params.prompt, options: params.options };
 		calls.push(call);
 		const script = turns[calls.length - 1] ?? (() => []);
 		return (async function* () {
-			const msgs = await script(call);
-			for (const m of msgs) yield m;
+			const msgs = script(call);
+			if (Symbol.asyncIterator in Object(msgs)) yield* msgs as AsyncIterable<unknown>;
+			else for (const m of (await msgs) as unknown[]) yield m;
 		})();
 	});
 	const forkSession = vi.fn(async (_id: string) => ({ sessionId: "forked-id" }));
@@ -259,5 +267,72 @@ describe("childEnv", () => {
 	it("strips both session-identity variables and tags the client", () => {
 		const env = childEnv({ CLAUDE_CODE_SESSION_ID: "a", CLAUDE_CODE_REMOTE_SESSION_ID: "b", HOME: "/h" });
 		expect(env).toEqual({ HOME: "/h", CLAUDE_AGENT_SDK_CLIENT_APP: "rpiv-claude" });
+	});
+});
+
+describe("ClaudeWorkflowHost — parking", () => {
+	const ask = { questions: [{ question: "Red or blue?", options: [{ label: "Red" }, { label: "Blue" }] }] };
+	const parkingStub = (over: Partial<Parking> = {}): Parking & { park: ReturnType<typeof vi.fn> } =>
+		({ park: vi.fn(), answerFor: vi.fn(() => undefined), ...over }) as never;
+
+	it("installs no permission callback when parking is off", async () => {
+		const sdk = fakeSdk([() => [result("s1")]]);
+		await run(host(sdk.deps).h);
+		expect(sdk.calls[0]!.options.canUseTool).toBeUndefined();
+	});
+
+	it("parks an AskUserQuestion: records it, tells the model to stop, and ends the stage aborted", async () => {
+		const parking = parkingStub();
+		let verdict: unknown;
+		const sdk = fakeSdk([
+			(call) =>
+				(async function* () {
+					yield init("s1");
+					verdict = await call.options.canUseTool("AskUserQuestion", ask, {
+						signal: new AbortController().signal,
+					});
+					yield result("s1", "error_during_execution");
+				})(),
+		]);
+		const { branch } = await run(host(sdk.deps, { parking }).h);
+		expect(parking.park).toHaveBeenCalledWith({
+			prompt: "/skill:plan do it",
+			sessionId: "s1",
+			sessionFile: "/sessions/s1.jsonl",
+			questions: ask.questions,
+		});
+		expect(verdict).toEqual({ behavior: "deny", message: PARKED_MESSAGE, interrupt: true });
+		expect(lastAssistant(branch).stopReason).toBe("aborted");
+	});
+
+	it("denies every other tool, exactly as an unattended run without the callback would", async () => {
+		const parking = parkingStub();
+		let verdict: any;
+		const sdk = fakeSdk([
+			(call) =>
+				(async function* () {
+					yield init("s1");
+					verdict = await call.options.canUseTool("Bash", { command: "rm -rf /" }, {});
+					yield result("s1");
+				})(),
+		]);
+		const { branch } = await run(host(sdk.deps, { parking }).h);
+		expect(verdict.behavior).toBe("deny");
+		expect(verdict.message).toContain("no one can grant it");
+		expect(parking.park).not.toHaveBeenCalled();
+		expect(lastAssistant(branch).stopReason).toBe("stop");
+	});
+
+	it("reopens an answered park's own session and sends the answer instead of the stage prompt", async () => {
+		const delivered = vi.fn();
+		const parking = parkingStub({
+			answerFor: vi.fn(() => ({ sessionId: "parked-s", message: "Answer: Blue", delivered })),
+		});
+		const sdk = fakeSdk([() => [say("parked-s", "painted blue"), result("parked-s")]]);
+		const { child } = await run(host(sdk.deps, { parking }).h);
+		expect(parking.answerFor).toHaveBeenCalledWith("/skill:plan do it");
+		expect(sdk.calls[0]).toMatchObject({ prompt: "Answer: Blue", options: { resume: "parked-s" } });
+		expect(delivered).toHaveBeenCalledOnce();
+		expect(child.sessionManager.getSessionId()).toBe("parked-s");
 	});
 });

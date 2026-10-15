@@ -1,0 +1,105 @@
+/**
+ * Wires the host's Parking hooks to the park store and (optionally) kata, for
+ * one rpiv-wf run or resume. The runner announces the run id and the current
+ * stage through lifecycle events; a park stops the whole run through `stop`.
+ */
+
+import type { LifecycleListeners } from "@juicesharp/rpiv-workflow";
+import type { Parking } from "./claude-host.js";
+import type { Kata } from "./kata.js";
+import { addPark, answeredParkFor, answerMessage, type Park, type ParkedQuestion, updatePark } from "./park-store.js";
+
+export interface RunParking {
+	parking: Parking;
+	lifecycle: LifecycleListeners;
+	/** Parks recorded during this invocation. */
+	parked(): readonly Park[];
+}
+
+/** Keep only the fields a person needs from AskUserQuestion's input. */
+export function toQuestions(raw: unknown): ParkedQuestion[] {
+	if (!Array.isArray(raw)) return [];
+	return raw.flatMap((q) => {
+		if (!q || typeof q !== "object" || typeof (q as { question?: unknown }).question !== "string") return [];
+		const r = q as { question: string; header?: unknown; options?: unknown; multiSelect?: unknown };
+		const options = Array.isArray(r.options)
+			? r.options
+					.filter((o): o is { label: string; description?: unknown } => typeof o?.label === "string")
+					.map((o) => ({
+						label: o.label,
+						...(typeof o.description === "string" ? { description: o.description } : {}),
+					}))
+			: [];
+		return [
+			{
+				question: r.question,
+				...(typeof r.header === "string" ? { header: r.header } : {}),
+				options,
+				...(r.multiSelect === true ? { multiSelect: true } : {}),
+			},
+		];
+	});
+}
+
+export function createRunParking(opts: {
+	cwd: string;
+	/** Known up front on resume; announced by the runner on a fresh run. */
+	runId?: string;
+	kata?: Kata;
+	stop: () => void;
+	notify: (m: string) => void;
+}): RunParking {
+	let runId = opts.runId;
+	let workflow: string | undefined;
+	let stage: string | undefined;
+	const recorded: Park[] = [];
+
+	const parking: Parking = {
+		park(info) {
+			if (!runId) {
+				opts.notify("a stage asked a question before the run id was known; stopping without parking it");
+				opts.stop();
+				return;
+			}
+			let park = addPark(opts.cwd, {
+				runId,
+				workflow,
+				stage,
+				prompt: info.prompt,
+				sessionId: info.sessionId,
+				sessionFile: info.sessionFile,
+				questions: toQuestions(info.questions),
+			});
+			const ref = opts.kata?.file(park, `rpiv-wf answer ${runId} ${park.n} <choice>`);
+			if (ref) park = updatePark(opts.cwd, runId, park.n, { kata: ref }) ?? park;
+			recorded.push(park);
+			opts.notify(`parked ${stage ?? "stage"}: ${park.questions[0]?.question ?? "a question"}`);
+			opts.stop();
+		},
+		answerFor(prompt) {
+			const park = runId ? answeredParkFor(opts.cwd, runId, prompt) : undefined;
+			if (!park || !runId) return undefined;
+			const id = runId;
+			return {
+				sessionId: park.sessionId,
+				sessionFile: park.sessionFile,
+				message: answerMessage(park),
+				delivered: () => {
+					updatePark(opts.cwd, id, park.n, { status: "resumed" });
+				},
+			};
+		},
+	};
+
+	const lifecycle: LifecycleListeners = {
+		onWorkflowStart(ctx) {
+			runId = ctx.runId;
+			workflow = ctx.workflow;
+		},
+		onStageStart(ref) {
+			stage = ref.name;
+		},
+	};
+
+	return { parking, lifecycle, parked: () => recorded };
+}

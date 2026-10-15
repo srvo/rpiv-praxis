@@ -58,7 +58,28 @@ export interface ClaudeHostOptions {
 	notify?: (message: string, level?: "info" | "warning" | "error") => void;
 	/** Override session-file lookup (tests). */
 	locate?: (sessionId: string) => string | undefined;
+	/** Park stages that ask a question instead of letting them guess (see Parking). */
+	parking?: Parking;
 }
+
+/**
+ * How a stage that needs a person waits for one. When a stage calls
+ * AskUserQuestion, the host hands the question to `park` (which records it and
+ * stops the run) and ends the stage's turn as aborted, so the runner leaves the
+ * stage for resume. On resume, `answerFor` finds the answer for a stage being
+ * re-dispatched with the same prompt; the host then reopens the parked session
+ * and sends the answer instead of starting the stage over.
+ */
+export interface Parking {
+	park(info: { prompt: string; sessionId: string; sessionFile?: string; questions: unknown }): void;
+	answerFor(
+		prompt: string,
+	): { sessionId: string; sessionFile?: string; message: string; delivered(): void } | undefined;
+}
+
+/** What the model reads when its question is parked: stop, do not guess. */
+export const PARKED_MESSAGE =
+	"Parked: no one can answer right now. Your question has been saved for the person running this workflow, and this stage will resume with their answer. Stop here: do not guess, do not continue the task, end your turn.";
 
 const EFFORT: Record<NonNullable<ModelSelection["thinking"]>, Effort> = {
 	off: "low",
@@ -131,7 +152,7 @@ export class ClaudeWorkflowHost implements WorkflowHostContext {
 			if (s?.aborted) abort.abort();
 			s?.addEventListener("abort", onAbort, { once: true });
 		}
-		const child = new ClaudeChildSession(this, this.opts, this.deps, options.model, abort);
+		const child = new ClaudeChildSession(this, this.opts, this.deps, options.model, abort, options.prompt);
 		try {
 			if (options.reattach) {
 				const file = options.reattach.sessionFile;
@@ -143,7 +164,15 @@ export class ClaudeWorkflowHost implements WorkflowHostContext {
 				// id, never assumed to be the source's (that would point resume at the predecessor).
 				child.adopt(sessionId, options.fork.sessionFile, this.locate(sessionId));
 			} else {
-				await child.sendUserMessage(options.prompt);
+				const answered = this.opts.parking?.answerFor(options.prompt);
+				if (answered) {
+					const file = answered.sessionFile ?? this.locate(answered.sessionId);
+					child.adopt(answered.sessionId, file ?? "", file);
+					await child.sendUserMessage(answered.message);
+					answered.delivered();
+				} else {
+					await child.sendUserMessage(options.prompt);
+				}
 			}
 			return await options.withSession(child);
 		} finally {
@@ -167,6 +196,7 @@ class ClaudeChildSession implements WorkflowSessionContext {
 	private sessionFile: string | undefined;
 	private readonly branch: BranchEntry[] = [];
 	private queue: Promise<void> = Promise.resolve();
+	private parked = false;
 
 	constructor(
 		private readonly parent: ClaudeWorkflowHost,
@@ -174,6 +204,8 @@ class ClaudeChildSession implements WorkflowSessionContext {
 		private readonly deps: ClaudeHostDeps,
 		private readonly model: ModelSelection | undefined,
 		private readonly abort: AbortController,
+		/** The stage prompt this child was opened for: the key a park is found by on resume. */
+		private readonly stagePrompt: string,
 	) {
 		this.cwd = parent.cwd;
 		this.maxConcurrency = parent.maxConcurrency;
@@ -230,7 +262,32 @@ class ClaudeChildSession implements WorkflowSessionContext {
 			...(selected ? { model: claudeModel(selected) } : {}),
 			...(this.model?.thinking ? { effort: EFFORT[this.model.thinking] } : {}),
 			...(this.sessionId ? { resume: this.sessionId } : {}),
+			...(this.opts.parking
+				? { canUseTool: (name: string, input: Record<string, unknown>) => this.permit(name, input) }
+				: {}),
 		};
+	}
+
+	/**
+	 * The permission callback a parking host installs. AskUserQuestion parks; every
+	 * other tool that reaches here is denied, exactly as an unattended run with no
+	 * callback denies it, so parking never widens what a stage may do.
+	 */
+	private async permit(name: string, input: Record<string, unknown>) {
+		if (name !== "AskUserQuestion" || !this.opts.parking || !this.sessionId) {
+			return {
+				behavior: "deny" as const,
+				message: `${name} needs approval, and no one can grant it in an unattended rpiv-wf run (permission mode ${this.opts.permissionMode}).`,
+			};
+		}
+		this.parked = true;
+		this.opts.parking.park({
+			prompt: this.stagePrompt,
+			sessionId: this.sessionId,
+			sessionFile: this.sessionManager.getSessionFile(),
+			questions: input.questions,
+		});
+		return { behavior: "deny" as const, message: PARKED_MESSAGE, interrupt: true };
 	}
 
 	private async turn(prompt: string): Promise<void> {
@@ -255,9 +312,9 @@ class ClaudeChildSession implements WorkflowSessionContext {
 					if (msg.subtype !== "success") this.ui.notify(`stage turn ended: ${msg.subtype}`, "warning");
 				}
 			}
-			if (this.abort.signal.aborted) stampStop(this.branch, "aborted", start);
+			if (this.abort.signal.aborted || this.parked) stampStop(this.branch, "aborted", start);
 		} catch (err) {
-			const aborted = this.abort.signal.aborted;
+			const aborted = this.abort.signal.aborted || this.parked;
 			if (!aborted) this.ui.notify(`Claude session error: ${String(err)}`, "error");
 			stampStop(this.branch, aborted ? "aborted" : "error", start);
 		}

@@ -106,7 +106,15 @@ This fork:
 
 Verified live (Claude Code, 9 runs): with evidence or baseline, only the run's file was committed; with neither, nothing was committed and the `NOT COMMITTED:` line appeared. Run logs and a pre-existing unrelated file were never staged.
 
-### 5. Smaller changes
+### 5. Human in the loop without a live session: parked questions
+
+Upstream parks a stage's question only inside a running Pi window (the lane console); close Pi and it is gone, and headless runs cannot ask at all.
+
+On Claude Code (`rpiv-claude`), a stage that calls `AskUserQuestion` parks the run instead of guessing: the question is saved beside the run log (`.rpiv/workflows/runs/<run-id>.parked.json`), a kata ticket labelled `rpiv-parked` is filed when kata is installed, and `rpiv-wf` exits `75`. `rpiv-wf inbox` lists what is waiting; `rpiv-wf answer <run> <n> <choice>` resumes the stage in its own session with the answer. So runs go until they need you, and you answer in batches. Nothing is written to a database. Details: [packages/rpiv-claude/README.md](./packages/rpiv-claude/README.md#parked-questions-human-in-the-loop).
+
+Verified live: a stage parked on its question (exit 75, ticket filed, nothing guessed), `inbox` listed it, `answer` resumed the same session, the stage finished with the chosen answer, the ticket closed, and the inbox emptied — in both `bypassPermissions` and the default `auto` mode.
+
+### 6. Smaller changes
 
 - `scripts/check-file-sizes.mjs` and `biome.json` skip the generated `hosts/` tree.
 - `version:*` scripts re-run `export:hosts` so the plugin version tracks the packages.
@@ -114,7 +122,7 @@ Verified live (Claude Code, 9 runs): with evidence or baseline, only the run's f
 
 ### Not changed (known gaps)
 
-- Other workflow stages still assume a person can answer: `research` (write-gate), `slice` (decomposition approval), `design-review` (the deliberate human design checkpoint in `build`), `blueprint` (several approvals, in `vet`/`polish`), `architecture-review` (human triage by design — `polish` is effectively interactive-only), `implement` (code/plan mismatch). Headless, these fail loudly (a missing artifact halts the stage) rather than silently; none is changed here pending a decision on each.
+- Stages that ask a person — `research` (write-gate), `slice` (decomposition approval), `design-review` (the human design checkpoint in `build`), `blueprint` (several approvals), `architecture-review` (human triage), `implement` (code/plan mismatch) — now **park** under `rpiv-claude` instead of failing. Under Pi without a UI they still fail loudly (a missing artifact halts the stage); Pi's in-session lane parking is unchanged.
 - `gitCommitOutcome` still treats a no-op commit as success. The `NOT COMMITTED:` line makes it visible in the transcript but not in the run result.
 - Upstream issues and releases stay at juicesharp/rpiv-mono; this fork does not publish to npm.
 
