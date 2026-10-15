@@ -4,10 +4,10 @@
  * them.
  */
 import { basename } from "node:path";
-import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { fanout, handleToString, type RunView } from "@juicesharp/rpiv-workflow/registration";
-import { countHeadingsOutsideFences } from "./markdown-fence.ts";
-import { haltPreflight, latestFsArtifact, MAX_PHASES, type PhaseRecord, readArtifactFile } from "./shared.ts";
+import { parseFrontmatter } from "../frontmatter.js";
+import { countHeadingsOutsideFences } from "./markdown-fence.js";
+import { haltPreflight, latestFsArtifact, MAX_PHASES, type PhaseRecord, readArtifactFile } from "./shared.js";
 
 /** `## Slice N:` headings — the source of truth a slice map's `slices:` array is derived from. */
 const SLICE_HEADING_RE = /^## Slice (\d+):/gm;

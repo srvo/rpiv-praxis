@@ -3,12 +3,13 @@
  * latest plan resolves and that each phase body's edit paths are declared in
  * its frontmatter `files:`.
  */
-import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+
 import type { Output, ScriptContext } from "@juicesharp/rpiv-workflow/registration";
-import { verifyCitations } from "./citations.ts";
-import { forEachLineOutsideFences } from "./markdown-fence.ts";
-import { PLAN_PHASE_RE, phaseFiles } from "./plan-phases.ts";
-import { haltPreflight, latestFsArtifact, readArtifactFile, writeStructureVerdict } from "./shared.ts";
+import { parseFrontmatter } from "../frontmatter.js";
+import { verifyCitations } from "./citations.js";
+import { forEachLineOutsideFences } from "./markdown-fence.js";
+import { PLAN_PHASE_RE, phaseFiles } from "./plan-phases.js";
+import { haltPreflight, latestFsArtifact, readArtifactFile, writeStructureVerdict } from "./shared.js";
 
 /**
  * Slice a plan body into per-phase text keyed by phase number, splitting on

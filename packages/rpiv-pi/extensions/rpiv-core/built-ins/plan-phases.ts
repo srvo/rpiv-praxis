@@ -4,7 +4,6 @@
  * implement/blueprint fanouts built on them.
  */
 import { basename } from "node:path";
-import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import {
 	type FanoutContext,
 	fanout,
@@ -14,7 +13,8 @@ import {
 	type RunView,
 	type Unit,
 } from "@juicesharp/rpiv-workflow/registration";
-import { countHeadingsOutsideFences } from "./markdown-fence.ts";
+import { parseFrontmatter } from "../frontmatter.js";
+import { countHeadingsOutsideFences } from "./markdown-fence.js";
 import {
 	haltPreflight,
 	latestFsArtifact,
@@ -22,7 +22,7 @@ import {
 	type PhaseRecord,
 	readArtifactFile,
 	TEST_PATH_RE,
-} from "./shared.ts";
+} from "./shared.js";
 
 /**
  * `## Phase N:` headings — the source of truth a plan's `phases:` frontmatter
