@@ -16,7 +16,7 @@ Keeping an experienced driver in the loop while the work moves at LLM speed. Com
 - Session-backed, mid-loop resume
 - Skill-contract architecture (load-time + runtime schema checks)
 - Skills and subagents exported to Claude Code (plugin) and Agent Skills harnesses (`npm run export:hosts`)
-- Non-Pi host: `/wf` workflows run headless on Claude Code via the Claude Agent SDK (`rpiv-claude`)
+- Non-Pi host: `/wf` workflows run headless on Claude Code via the Claude Agent SDK (`rpiv-praxis`)
 - Sibling family — `ask-user-question`, `todo`, `advisor`, `web-tools`, `args`, `i18n`, `btw`, `voice`, `warp`, `telemetry`
 
 ## What's Next

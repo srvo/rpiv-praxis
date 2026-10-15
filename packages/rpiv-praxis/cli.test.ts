@@ -58,7 +58,7 @@ describe("rpiv-wf", () => {
 		const [ctx, name, input, opts] = vi.mocked(h.api.runWorkflowByName).mock.calls[0]!;
 		expect([name, input]).toEqual(["build", "add dark mode"]);
 		expect(ctx.maxConcurrency).toBe(4);
-		expect(opts).toMatchObject({ name: "dm", trigger: { kind: "programmatic", source: "rpiv-claude" } });
+		expect(opts).toMatchObject({ name: "dm", trigger: { kind: "programmatic", source: "rpiv-praxis" } });
 		expect((opts as { host: { getCommands(): unknown[] } }).host.getCommands()).toEqual([
 			{ name: "skill:commit", source: "skill" },
 		]);
@@ -225,5 +225,49 @@ describe("rpiv-wf parked questions", () => {
 		expect(code).toBe(EXIT.parked);
 		expect(a.out.at(-1)).toBe("parked: answer with `rpiv-wf answer r9 1 <choice>`");
 		expect(readParks(cwd, "r9")).toHaveLength(1);
+	});
+});
+
+describe("rpiv-wf steps", () => {
+	const quiet = { out: () => {}, err: () => {} };
+
+	it("step runs the skill's one-stage workflow with the joined input", async () => {
+		const h = harness();
+		const cwd = mkdtempSync(join(tmpdir(), "rpiv-cli-step-"));
+		const code = await main(["step", "research", "how", "does", "x", "--cwd", cwd, "--plugin-dir", plugin()], quiet, {
+			api: h.api,
+			deps: { query: vi.fn(), forkSession: vi.fn() } as never,
+			kata: null,
+		});
+		expect(code).toBe(EXIT.ok);
+		const [, name, input] = vi.mocked(h.api.runWorkflowByName).mock.calls[0]!;
+		expect([name, input]).toEqual(["step-research", "how does x"]);
+	});
+
+	it("step refuses an unknown skill", async () => {
+		const h = harness();
+		const err: string[] = [];
+		const code = await main(
+			["step", "no-such-skill", "--plugin-dir", plugin()],
+			{ out: () => {}, err: (l) => err.push(l) },
+			{
+				api: h.api,
+				kata: null,
+			},
+		);
+		expect(code).toBe(EXIT.usage);
+		expect(err.join()).toContain("rpiv-wf steps");
+	});
+
+	it("steps lists skills with their source and kind; list hides step workflows", async () => {
+		const out: string[] = [];
+		expect(await main(["steps"], { out: (l) => out.push(l), err: () => {} })).toBe(EXIT.ok);
+		expect(out).toContain("research\trpiv\tproduces");
+		const h = harness();
+		vi.mocked(h.api.loadWorkflows).mockResolvedValueOnce({
+			workflows: [{ name: "build" }, { name: "step-research" }],
+		});
+		await h.go(["list"]);
+		expect(h.out).toEqual(["build"]);
 	});
 });

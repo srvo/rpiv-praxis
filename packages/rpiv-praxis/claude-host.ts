@@ -100,7 +100,7 @@ export function claudeModel(key: string): string {
 	const slash = key.indexOf("/");
 	if (slash === -1) return key;
 	const provider = key.slice(0, slash);
-	if (provider !== "anthropic") throw new Error(`rpiv-claude: model "${key}" is not an Anthropic model`);
+	if (provider !== "anthropic") throw new Error(`rpiv-praxis: model "${key}" is not an Anthropic model`);
 	return key.slice(slash + 1);
 }
 
@@ -115,7 +115,7 @@ export const INHERITED_SESSION_VARS = ["CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_RE
 
 /** The child process environment: the launcher's, minus its session identity. */
 export function childEnv(env: NodeJS.ProcessEnv = process.env): Record<string, string | undefined> {
-	const out: Record<string, string | undefined> = { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: "rpiv-claude" };
+	const out: Record<string, string | undefined> = { ...env, CLAUDE_AGENT_SDK_CLIENT_APP: "rpiv-praxis" };
 	for (const name of INHERITED_SESSION_VARS) delete out[name];
 	return out;
 }

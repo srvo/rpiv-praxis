@@ -60,7 +60,7 @@ export function skillRegistryHost(catalog: SkillCatalog): WorkflowHost {
 	const names = [...new Set([...catalog.plugin, ...catalog.local])];
 	return {
 		registerCommand() {
-			throw new Error("rpiv-claude: slash-command registration is Pi-only");
+			throw new Error("rpiv-praxis: slash-command registration is Pi-only");
 		},
 		getCommands: () => names.map((name) => ({ name: `skill:${name}`, source: "skill" })),
 	};

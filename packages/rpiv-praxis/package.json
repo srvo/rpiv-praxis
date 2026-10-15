@@ -1,8 +1,8 @@
 {
-	"name": "@juicesharp/rpiv-claude",
+	"name": "@ethicalcapital/rpiv-praxis",
 	"version": "2.13.8",
 	"private": true,
-	"description": "Run rpiv-workflow pipelines (/wf) headless on Claude Code through the Claude Agent SDK. No Pi process.",
+	"description": "rpiv workflows on Claude Code through the Claude Agent SDK (rpiv-wf), and as MCP tools for any agent (rpiv-mcp). No Pi process.",
 	"keywords": [
 		"rpiv",
 		"workflow",
@@ -15,10 +15,11 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/ethicalcapital/rpiv-mono.git",
-		"directory": "packages/rpiv-claude"
+		"directory": "packages/rpiv-praxis"
 	},
 	"bin": {
-		"rpiv-wf": "./bin/rpiv-wf.mjs"
+		"rpiv-wf": "./bin/rpiv-wf.mjs",
+		"rpiv-mcp": "./bin/rpiv-mcp.mjs"
 	},
 	"scripts": {
 		"test": "vitest run"
@@ -28,6 +29,8 @@
 		"@juicesharp/rpiv-pi": "^2.13.8",
 		"@juicesharp/rpiv-workflow": "^2.13.8",
 		"jiti": "^2.7.0",
-		"yaml": "^2.9.0"
+		"yaml": "^2.9.0",
+		"@modelcontextprotocol/sdk": "^1.32.1",
+		"zod": "^4.6.7"
 	}
 }

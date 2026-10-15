@@ -5,6 +5,8 @@
  *   rpiv-wf run <workflow> [input…] [--name N] [--model M] [--concurrency N]
  *                                   [--permission-mode M] [--plugin-dir D] [--cwd D]
  *   rpiv-wf resume <run-id|name>    [same flags]
+ *   rpiv-wf step <skill> [args…]    one skill as a one-stage run (output checked, logged, resumable)
+ *   rpiv-wf steps                   skills a step can run
  *   rpiv-wf inbox                   questions parked runs are waiting on
  *   rpiv-wf answer <run> <n> <choice…> [--no-resume] [same flags]
  *
@@ -29,6 +31,7 @@ import { formatPark, openParks, readParks, resolveChoice, resolveRunId, updatePa
 import { createRunParking } from "./parking.js";
 import { registerRpivWorkflowSupport } from "./rpiv-support.js";
 import { defaultPluginDir, loadSkillCatalog, skillRegistryHost } from "./skills.js";
+import { registerStep, STEP_PREFIX, stepSkill, stepSkills, stepWorkflowName } from "./steps.js";
 
 export const EXIT = { ok: 0, failed: 1, usage: 2, parked: 75, interrupted: 130 } as const;
 
@@ -39,6 +42,8 @@ const USAGE = `usage:
   rpiv-wf list
   rpiv-wf run <workflow> [input...] [options]
   rpiv-wf resume <run-id|name> [options]
+  rpiv-wf step <skill> [args...] [options]
+  rpiv-wf steps
   rpiv-wf inbox
   rpiv-wf answer <run-id|name> <n> <choice...> [--no-resume] [options]
 
@@ -73,6 +78,17 @@ async function defaultApi(cwd: string): Promise<WorkflowApi> {
 	const { loadWorkflows } = await import("@juicesharp/rpiv-workflow/registration");
 	const { runWorkflowByName, resumeWorkflowByRunId } = await import("@juicesharp/rpiv-workflow/runner");
 	return { loadWorkflows, runWorkflowByName, resumeWorkflowByRunId } as WorkflowApi;
+}
+
+/** The skill behind a step run, read from the run's header; undefined for any other run. */
+async function stepOfRun(cwd: string, ref: string): Promise<string | undefined> {
+	try {
+		const { resolveRun } = await import("@juicesharp/rpiv-workflow/registration");
+		const header = resolveRun(cwd, ref) as { workflow?: string } | undefined;
+		return header?.workflow ? stepSkill(header.workflow) : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 async function defaultDeps(): Promise<ClaudeHostDeps> {
@@ -138,11 +154,16 @@ export async function main(
 		io.err(`unknown --permission-mode "${mode}"\n${USAGE}`);
 		return EXIT.usage;
 	}
-	const needsTarget = command === "run" || command === "resume";
-	const known = needsTarget || command === "list" || command === "inbox" || command === "answer";
+	const needsTarget = command === "run" || command === "resume" || command === "step";
+	const known = needsTarget || ["list", "inbox", "answer", "steps"].includes(command ?? "");
 	if (!known || (needsTarget && !target) || (command === "answer" && rest.length < 2)) {
 		io.err(USAGE);
 		return EXIT.usage;
+	}
+
+	if (command === "steps") {
+		for (const s of stepSkills(cwd)) io.out(`${s.name}\t${s.source}\t${s.kind}`);
+		return EXIT.ok;
 	}
 
 	if (command === "inbox") {
@@ -178,10 +199,19 @@ export async function main(
 	const api = inject.api ?? (await defaultApi(cwd));
 	if (command === "list") {
 		const { workflows, issues = [] } = await api.loadWorkflows(cwd);
-		for (const w of workflows) io.out(w.description ? `${w.name}\t${w.description}` : w.name);
+		for (const w of workflows.filter((x) => !x.name.startsWith(STEP_PREFIX))) {
+			io.out(w.description ? `${w.name}\t${w.description}` : w.name);
+		}
 		// `run` refuses on any error-severity issue; say so here rather than list a set it will not run.
 		for (const i of issues) io.err(`[${i.severity}] ${i.message}`);
 		return issues.some((i) => i.severity === "error") ? EXIT.failed : EXIT.ok;
+	}
+
+	// A step run (or the resume of one) registers its one-stage workflow, and only that one.
+	const step = command === "step" ? target : command !== "run" ? await stepOfRun(cwd, resumeRef!) : undefined;
+	if (step && !(await registerStep(step, cwd))) {
+		io.err(`no skill "${step}" — see \`rpiv-wf steps\``);
+		return EXIT.usage;
 	}
 
 	const pluginDir = resolve(values["plugin-dir"] ?? defaultPluginDir());
@@ -195,7 +225,7 @@ export async function main(
 	if (inject.signal?.aborted) stop.abort();
 	const runParking = createRunParking({
 		cwd,
-		runId: command === "run" ? undefined : resolveRunId(cwd, resumeRef!),
+		runId: command === "run" || command === "step" ? undefined : resolveRunId(cwd, resumeRef!),
 		kata,
 		stop: () => stop.abort(),
 		notify: (m) => io.err(`[info] ${m}`),
@@ -218,12 +248,17 @@ export async function main(
 		host: skillRegistryHost(catalog),
 		signal: stop.signal,
 		lifecycle: runParking.lifecycle,
-		trigger: { kind: "programmatic", source: "rpiv-claude" },
+		trigger: { kind: "programmatic", source: "rpiv-praxis" },
 		...(values.name ? { name: values.name } : {}),
 	};
 	const result =
-		command === "run"
-			? await api.runWorkflowByName(host, target!, rest.join(" "), opts)
+		command === "run" || command === "step"
+			? await api.runWorkflowByName(
+					host,
+					command === "step" ? stepWorkflowName(target!) : target!,
+					rest.join(" "),
+					opts,
+				)
 			: await api.resumeWorkflowByRunId(host, resumeRef!, opts);
 	const parked = runParking.parked();
 	if (parked.length > 0) {

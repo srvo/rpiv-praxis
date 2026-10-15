@@ -13,7 +13,7 @@
  *   resumed  → the answer was delivered to the stage
  */
 
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export interface ParkedOption {
@@ -63,6 +63,7 @@ export function readParks(cwd: string, runId: string): Park[] {
 
 function writeParks(cwd: string, runId: string, parks: Park[]): void {
 	const file = parkFile(cwd, runId);
+	mkdirSync(runsDir(cwd), { recursive: true });
 	const tmp = `${file}.tmp`;
 	writeFileSync(tmp, `${JSON.stringify({ runId, parks }, null, "\t")}\n`);
 	renameSync(tmp, file);

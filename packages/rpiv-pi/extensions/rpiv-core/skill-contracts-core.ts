@@ -2,7 +2,7 @@
  * Pi-free core of skill-contract registration: normalise a skill's `contract:`
  * frontmatter, compare artifact kinds across a named channel, and harvest
  * contracts from SKILL.md files. skill-contracts-source.ts wires these to Pi's
- * skill loader; rpiv-claude wires them to Claude Code's skill directories.
+ * skill loader; rpiv-praxis wires them to Claude Code's skill directories.
  */
 
 import { readFileSync } from "node:fs";

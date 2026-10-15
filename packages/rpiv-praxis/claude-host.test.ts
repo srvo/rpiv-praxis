@@ -197,7 +197,7 @@ describe("ClaudeWorkflowHost — fresh stage", () => {
 
 describe("ClaudeWorkflowHost — reattach and fork", () => {
 	function sessionFile(): string {
-		const dir = mkdtempSync(join(tmpdir(), "rpiv-claude-"));
+		const dir = mkdtempSync(join(tmpdir(), "rpiv-praxis-"));
 		const file = join(dir, "orig-id.jsonl");
 		const rows = [
 			{ type: "user", message: { role: "user", content: "first" } },
@@ -266,7 +266,7 @@ describe("claudeModel", () => {
 describe("childEnv", () => {
 	it("strips both session-identity variables and tags the client", () => {
 		const env = childEnv({ CLAUDE_CODE_SESSION_ID: "a", CLAUDE_CODE_REMOTE_SESSION_ID: "b", HOME: "/h" });
-		expect(env).toEqual({ HOME: "/h", CLAUDE_AGENT_SDK_CLIENT_APP: "rpiv-claude" });
+		expect(env).toEqual({ HOME: "/h", CLAUDE_AGENT_SDK_CLIENT_APP: "rpiv-praxis" });
 	});
 });
 

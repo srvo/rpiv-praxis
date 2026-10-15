@@ -15,7 +15,7 @@ import { parse } from "yaml";
  *
  * Byte-for-byte the contract of Pi's `parseFrontmatter` (pi-coding-agent
  * `utils/frontmatter`), kept local so the built-in workflows load under hosts
- * that are not Pi (the Claude Code runner in rpiv-claude). Strips a BOM,
+ * that are not Pi (the Claude Code runner in rpiv-praxis). Strips a BOM,
  * normalises CRLF/CR, requires a leading `---` and a closing `\n---`; anything
  * else yields `{ frontmatter: {}, body }`. Invalid YAML throws, as Pi's does.
  */

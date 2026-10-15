@@ -49,7 +49,7 @@ Five packages you do not `pi install`. One is on npm as a library; four are `pri
 | --- | --- | --- |
 | [`rpiv-config`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-config) | Shared XDG-aware JSON config I/O for the siblings | Published as a library: `npm install @juicesharp/rpiv-config`. Not a Pi extension — it registers nothing, and ten siblings already pull it in as a dependency. [npm](https://www.npmjs.com/package/@juicesharp/rpiv-config) |
 | [`rpiv-telemetry`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-telemetry) | MLflow observability — auto-instruments lifecycle + sub-agent activity | **Not published.** Inside this repo Pi loads it through the workspace symlink; elsewhere, point Pi at a checkout: `pi install ./packages/rpiv-telemetry` |
-| [`rpiv-claude`](./packages/rpiv-claude) | `rpiv-wf`: runs `/wf` workflows headless on Claude Code through the Claude Agent SDK | **Not published.** Run from a checkout: `node packages/rpiv-claude/bin/rpiv-wf.mjs run <workflow> "<brief>"` |
+| [`rpiv-praxis`](./packages/rpiv-praxis) | `rpiv-wf`: runs `/wf` workflows headless on Claude Code through the Claude Agent SDK | **Not published.** Run from a checkout: `node packages/rpiv-praxis/bin/rpiv-wf.mjs run <workflow> "<brief>"` |
 | [`rpiv-site`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-site) | The [rpiv-pi.com](https://rpiv-pi.com) site (static Astro build) | **Not published.** Built from this repo with `npm run build:site`, deployed to GitHub Pages by CI |
 | [`test-utils`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/test-utils) | Shared test fixtures (`@juicesharp/rpiv-test-utils`) | **Not published.** Symlinked by npm workspaces; imported by the test suite only |
 
@@ -67,15 +67,15 @@ Upstream is a Pi-only toolkit. This fork keeps every Pi path intact and adds a s
 
 Detail and install steps: [Other harnesses](#other-harnesses-claude-code-codex-opencode-factory).
 
-### 2. `/wf` workflows run on Claude Code — new package `rpiv-claude`
+### 2. `/wf` workflows run on Claude Code — new package `rpiv-praxis`
 
 | | Upstream | This fork |
 | --- | --- | --- |
-| Workflow runner host | Pi's `AgentSession` (`SdkWorkflowHost` in rpiv-pi) | also the Claude Agent SDK, via `packages/rpiv-claude` (`rpiv-wf list / run / resume`) |
+| Workflow runner host | Pi's `AgentSession` (`SdkWorkflowHost` in rpiv-pi) | also the Claude Agent SDK, via `packages/rpiv-praxis` (`rpiv-wf list / run / resume`) |
 | Built-ins outside Pi | not possible (they imported Pi at runtime) | load without Pi installed |
 | Run state | `.rpiv/workflows/runs/` | same files; a run started on one host lists and resumes on the other |
 
-rpiv-workflow itself is unchanged: its runner was already host-agnostic. See [packages/rpiv-claude/README.md](./packages/rpiv-claude/README.md) for the mapping and the differences from Pi (headless only, Anthropic models only, no lane console).
+rpiv-workflow itself is unchanged: its runner was already host-agnostic. See [packages/rpiv-praxis/README.md](./packages/rpiv-praxis/README.md) for the mapping and the differences from Pi (headless only, Anthropic models only, no lane console).
 
 ### 3. rpiv-pi no longer needs Pi at runtime on the workflow path
 
@@ -110,19 +110,45 @@ Verified live (Claude Code, 9 runs): with evidence or baseline, only the run's f
 
 Upstream parks a stage's question only inside a running Pi window (the lane console); close Pi and it is gone, and headless runs cannot ask at all.
 
-On Claude Code (`rpiv-claude`), a stage that calls `AskUserQuestion` parks the run instead of guessing: the question is saved beside the run log (`.rpiv/workflows/runs/<run-id>.parked.json`), a kata ticket labelled `rpiv-parked` is filed when kata is installed, and `rpiv-wf` exits `75`. `rpiv-wf inbox` lists what is waiting; `rpiv-wf answer <run> <n> <choice>` resumes the stage in its own session with the answer. So runs go until they need you, and you answer in batches. Nothing is written to a database. Details: [packages/rpiv-claude/README.md](./packages/rpiv-claude/README.md#parked-questions-human-in-the-loop).
+On Claude Code (`rpiv-praxis`), a stage that calls `AskUserQuestion` parks the run instead of guessing: the question is saved beside the run log (`.rpiv/workflows/runs/<run-id>.parked.json`), a kata ticket labelled `rpiv-parked` is filed when kata is installed, and `rpiv-wf` exits `75`. `rpiv-wf inbox` lists what is waiting; `rpiv-wf answer <run> <n> <choice>` resumes the stage in its own session with the answer. So runs go until they need you, and you answer in batches. Nothing is written to a database. Details: [packages/rpiv-praxis/README.md](./packages/rpiv-praxis/README.md#parked-questions-human-in-the-loop).
 
 Verified live: a stage parked on its question (exit 75, ticket filed, nothing guessed), `inbox` listed it, `answer` resumed the same session, the stage finished with the chosen answer, the ticket closed, and the inbox emptied — in both `bypassPermissions` and the default `auto` mode.
 
-### 6. Smaller changes
+### 6. Steps and tools: rpiv as building blocks
+
+Upstream runs whole workflows; an agent cannot call one step on its own or start a workflow as a tool. `rpiv-praxis` adds, on public APIs only:
+
+- **Steps** — `rpiv-wf step <skill> [args]` runs any one skill as a single-stage workflow with the full guarantees: output checked against the skill's contract, logged, parkable, resumable. `rpiv-wf steps` lists them (rpiv's, the project's, the user's).
+- **`rpiv-mcp`** — an MCP server exposing `list_workflows`, `list_steps`, `run_workflow`, `run_step`, `run_status`, `inbox`, `answer`. Runs start in the background and return a name to poll, so an agent can fan out across steps and workflows itself.
+
+Verified live: a Claude Code agent given the server ran a step in two projects in parallel and reported both completed. Details: [packages/rpiv-praxis/README.md](./packages/rpiv-praxis/README.md#mcp-tools-rpiv-as-building-blocks-for-any-agent).
+
+### 7. Smaller changes
 
 - `scripts/check-file-sizes.mjs` and `biome.json` skip the generated `hosts/` tree.
 - `version:*` scripts re-run `export:hosts` so the plugin version tracks the packages.
 - `rpiv-wf list` prints workflow load errors instead of silently omitting broken packs.
 
+### Staying close to upstream
+
+This fork tracks [juicesharp/rpiv-mono](https://github.com/juicesharp/rpiv-mono) and should keep doing so. The rules:
+
+- **New work goes in `packages/rpiv-praxis`**, built on upstream's public APIs (`runWorkflow`, `resumeWorkflow`, `registerBuiltIns`, lifecycle listeners, the executor port). Steps, the MCP server, parking and the Claude host touch nothing in `rpiv-workflow`.
+- **The footprint inside upstream's packages is small and listed here.** As of this writing: nothing in `rpiv-workflow`; in `rpiv-pi`, the host exporter (`scripts/export-hosts.ts`, generated `hosts/`), the Pi-free seams (`frontmatter.ts` `parseFrontmatter`, `skill-contracts-core.ts`, `module-errors.ts`, re-exported from their old homes), and the reviewed-commit change (`built-ins/commit-prompt.ts`, `skills/commit/SKILL.md`, the commit stages in `vet`/`polish`/`meta`). Check it any time with `git diff --stat upstream/main...HEAD -- packages/rpiv-pi packages/rpiv-workflow`.
+- **Syncing:**
+
+  ```sh
+  git remote add upstream https://github.com/juicesharp/rpiv-mono.git   # once
+  git fetch upstream main
+  git merge upstream/main          # into main; conflicts can only be in the files above
+  npm install && npm run export:hosts && npm run check:hosts && npm test
+  ```
+
+- **Offer the generally useful pieces back.** Upstream asks for an issue before a non-trivial PR. Good candidates: the host exporter (skills/subagents for Claude Code and Agent Skills harnesses), the Pi-free seams (they make the runner's own "future non-Pi host" note real), and `--reviewed` for unattended commits. Each one upstream accepts shrinks the footprint above. The author is Sergii Guslystyi ([@juicesharp](https://x.com/juicesharp)).
+
 ### Not changed (known gaps)
 
-- Stages that ask a person — `research` (write-gate), `slice` (decomposition approval), `design-review` (the human design checkpoint in `build`), `blueprint` (several approvals), `architecture-review` (human triage), `implement` (code/plan mismatch) — now **park** under `rpiv-claude` instead of failing. Under Pi without a UI they still fail loudly (a missing artifact halts the stage); Pi's in-session lane parking is unchanged.
+- Stages that ask a person — `research` (write-gate), `slice` (decomposition approval), `design-review` (the human design checkpoint in `build`), `blueprint` (several approvals), `architecture-review` (human triage), `implement` (code/plan mismatch) — now **park** under `rpiv-praxis` instead of failing. Under Pi without a UI they still fail loudly (a missing artifact halts the stage); Pi's in-session lane parking is unchanged.
 - `gitCommitOutcome` still treats a no-op commit as success. The `NOT COMMITTED:` line makes it visible in the transcript but not in the run result.
 - Upstream issues and releases stay at juicesharp/rpiv-mono; this fork does not publish to npm.
 
@@ -139,7 +165,7 @@ What the export changes, and what it cannot carry:
 
 - **Claude Code** keeps `$ARGUMENTS` and ```` ```! ```` context blocks, which rpiv-args already mirrors. It swaps `${SKILL_DIR}` for `${CLAUDE_SKILL_DIR}`, `/skill:x` for `/rpiv:x`, `ask_user_question` for `AskUserQuestion`, Pi tool names for Claude's, and namespaces subagent names. Each skill gets an exact `allowed-tools` grant for the `node` helpers its ```` ```! ```` blocks run, because Claude Code refuses to load a skill whose context commands are not approved.
 - **Agent Skills** frontmatter is cut to `name` and `description`; ```` ```! ```` blocks become "run these commands first" steps, and a preamble tells the model what to do when a harness lacks subagents or a named tool.
-- **Workflows on Claude Code:** `/wf` itself is a Pi command, but [`rpiv-claude`](./packages/rpiv-claude) runs the same workflows (built-ins and your packs) headless through the Claude Agent SDK, sharing run state with Pi.
+- **Workflows on Claude Code:** `/wf` itself is a Pi command, but [`rpiv-praxis`](./packages/rpiv-praxis) runs the same workflows (built-ins and your packs) headless through the Claude Agent SDK, sharing run state with Pi.
 - **Pi-only:** `advisor` (skills already fall back to an inline path when it is absent), per-agent model routing from `models.json`, the lane console, and the rpiv-pi extension itself.
 - The exporter fails closed: an agent tool with no Claude mapping, a `/skill:` that names no skill, or a positional `$1` (1-based in rpiv-args, 0-based in Claude Code) stops the export.
 

@@ -1,6 +1,6 @@
 /**
  * Module-resolution error guard. Pi-free on purpose: outcome-derivation.ts needs
- * it and is loaded by hosts that are not Pi (rpiv-claude). utils.ts re-exports it.
+ * it and is loaded by hosts that are not Pi (rpiv-praxis). utils.ts re-exports it.
  */
 
 /**
