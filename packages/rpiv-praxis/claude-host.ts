@@ -60,6 +60,43 @@ export interface ClaudeHostOptions {
 	locate?: (sessionId: string) => string | undefined;
 	/** Park stages that ask a question instead of letting them guess (see Parking). */
 	parking?: Parking;
+	/** Effort for every stage unless the stage's own model selection sets thinking. */
+	effort?: Effort;
+	/** The built-in tools stages may use (default: Claude Code's full set). */
+	tools?: string[];
+	/** Tools removed from every stage. */
+	disallowedTools?: string[];
+	/** Which settings (and CLAUDE.md memory) stages load: default user + project + local. */
+	settingSources?: SettingSource[];
+	/** Called once per turn with what it cost: the raw material for evals. */
+	onUsage?: (usage: TurnUsage) => void;
+}
+
+type SettingSource = NonNullable<Options["settingSources"]>[number];
+
+/**
+ * What a session has cost so far. The SDK's result reports this CUMULATIVELY
+ * for a resumed or forked session (measured: $0.021 → $0.051 → $0.074 over
+ * three resumed queries), so a turn's own cost is the difference from the last
+ * total seen for that session.
+ */
+export interface SessionUsage {
+	costUsd: number;
+	models: TurnUsage["models"];
+}
+
+/** One turn's own cost and activity (never cumulative), plus its tool calls. */
+export interface TurnUsage {
+	costUsd: number;
+	turns: number;
+	durationMs: number;
+	/** Per model: tokens in/out, cache reads/writes. */
+	models: Record<
+		string,
+		{ inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number }
+	>;
+	/** Main-thread tool calls by tool name. */
+	toolCalls: Record<string, number>;
 }
 
 /**
@@ -72,9 +109,18 @@ export interface ClaudeHostOptions {
  */
 export interface Parking {
 	park(info: { prompt: string; sessionId: string; sessionFile?: string; questions: unknown }): void;
-	answerFor(
-		prompt: string,
-	): { sessionId: string; sessionFile?: string; message: string; delivered(): void } | undefined;
+	answerFor(prompt: string):
+		| {
+				sessionId: string;
+				sessionFile?: string;
+				message: string;
+				delivered(): void;
+				/** The session's cumulative usage when it parked: the baseline for the resumed turns. */
+				usage?: SessionUsage;
+		  }
+		| undefined;
+	/** Record a parked session's cumulative usage once its interrupted turn reports it. */
+	noteUsage?(sessionId: string, usage: SessionUsage): void;
 }
 
 /** What the model reads when its question is parked: stop, do not guess. */
@@ -120,6 +166,57 @@ export function childEnv(env: NodeJS.ProcessEnv = process.env): Record<string, s
 	return out;
 }
 
+type ResultUsage = {
+	total_cost_usd?: number;
+	num_turns?: number;
+	duration_ms?: number;
+	modelUsage?: Record<string, Record<string, unknown>>;
+};
+
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const ZERO = { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 };
+
+/** The session's cumulative usage as an SDK result reports it; missing fields count as zero. */
+export function sessionUsageOf(result: ResultUsage): SessionUsage {
+	const models: TurnUsage["models"] = {};
+	for (const [model, u] of Object.entries(result.modelUsage ?? {})) {
+		models[model] = {
+			inputTokens: num(u.inputTokens),
+			outputTokens: num(u.outputTokens),
+			cacheReadInputTokens: num(u.cacheReadInputTokens),
+			cacheCreationInputTokens: num(u.cacheCreationInputTokens),
+		};
+	}
+	return { costUsd: num(result.total_cost_usd), models };
+}
+
+/** This turn's own usage: `now` minus the session's previous total (never negative). */
+export function turnUsage(
+	result: ResultUsage,
+	toolCalls: Record<string, number>,
+	before: SessionUsage = { costUsd: 0, models: {} },
+): TurnUsage {
+	const now = sessionUsageOf(result);
+	const pos = (a: number, b: number) => Math.max(0, a - b);
+	const models: TurnUsage["models"] = {};
+	for (const [model, m] of Object.entries(now.models)) {
+		const b = before.models[model] ?? ZERO;
+		models[model] = {
+			inputTokens: pos(m.inputTokens, b.inputTokens),
+			outputTokens: pos(m.outputTokens, b.outputTokens),
+			cacheReadInputTokens: pos(m.cacheReadInputTokens, b.cacheReadInputTokens),
+			cacheCreationInputTokens: pos(m.cacheCreationInputTokens, b.cacheCreationInputTokens),
+		};
+	}
+	return {
+		costUsd: pos(now.costUsd, before.costUsd),
+		turns: num(result.num_turns),
+		durationMs: num(result.duration_ms),
+		models,
+		toolCalls: { ...toolCalls },
+	};
+}
+
 function emptySessionManager() {
 	return { getBranch: () => [], getSessionId: () => "", getSessionFile: () => undefined };
 }
@@ -131,6 +228,8 @@ export class ClaudeWorkflowHost implements WorkflowHostContext {
 	readonly signal?: AbortSignal;
 	readonly ui: WorkflowHostContext["ui"];
 	readonly sessionManager = emptySessionManager();
+	/** Last cumulative usage seen per session id: the baseline for that session's next turn. */
+	readonly usageSeen = new Map<string, SessionUsage>();
 
 	constructor(
 		private readonly opts: ClaudeHostOptions,
@@ -160,12 +259,16 @@ export class ClaudeWorkflowHost implements WorkflowHostContext {
 			} else if (options.fork) {
 				const source = basename(options.fork.sessionFile, ".jsonl");
 				const { sessionId } = await this.deps.forkSession(source, { dir: this.cwd });
+				// A fork continues its source's cumulative total; count only what it adds.
+				const sourceUsage = this.usageSeen.get(source);
+				if (sourceUsage) this.usageSeen.set(sessionId, sourceUsage);
 				// The fork's prefix is the source transcript; its own file is located by
 				// id, never assumed to be the source's (that would point resume at the predecessor).
 				child.adopt(sessionId, options.fork.sessionFile, this.locate(sessionId));
 			} else {
 				const answered = this.opts.parking?.answerFor(options.prompt);
 				if (answered) {
+					if (answered.usage) this.usageSeen.set(answered.sessionId, answered.usage);
 					const file = answered.sessionFile ?? this.locate(answered.sessionId);
 					child.adopt(answered.sessionId, file ?? "", file);
 					await child.sendUserMessage(answered.message);
@@ -256,11 +359,17 @@ class ClaudeChildSession implements WorkflowSessionContext {
 			env: childEnv(),
 			abortController: this.abort,
 			plugins: [{ type: "local", path: this.opts.pluginDir }],
-			settingSources: ["user", "project", "local"],
+			settingSources: this.opts.settingSources ?? ["user", "project", "local"],
+			...(this.opts.tools ? { tools: this.opts.tools } : {}),
+			...(this.opts.disallowedTools ? { disallowedTools: this.opts.disallowedTools } : {}),
 			permissionMode: this.opts.permissionMode,
 			...(this.opts.permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
 			...(selected ? { model: claudeModel(selected) } : {}),
-			...(this.model?.thinking ? { effort: EFFORT[this.model.thinking] } : {}),
+			...(this.model?.thinking
+				? { effort: EFFORT[this.model.thinking] }
+				: this.opts.effort
+					? { effort: this.opts.effort }
+					: {}),
 			...(this.sessionId ? { resume: this.sessionId } : {}),
 			...(this.opts.parking
 				? { canUseTool: (name: string, input: Record<string, unknown>) => this.permit(name, input) }
@@ -300,6 +409,7 @@ class ClaudeChildSession implements WorkflowSessionContext {
 		try {
 			const options = this.options();
 			const run = this.deps.query({ prompt: translateSkillPrompt(prompt, this.opts.catalog), options });
+			const toolCalls: Record<string, number> = {};
 			for await (const msg of run) {
 				if ("session_id" in msg && typeof msg.session_id === "string" && msg.session_id) {
 					if (msg.session_id !== this.sessionId) this.sessionFile = undefined;
@@ -307,7 +417,15 @@ class ClaudeChildSession implements WorkflowSessionContext {
 				}
 				if (msg.type === "assistant" && msg.parent_tool_use_id === null) {
 					this.branch.push(assistantEntry(msg.message.content));
+					for (const part of msg.message.content as Array<{ type: string; name?: string }>) {
+						if (part.type === "tool_use" && part.name) toolCalls[part.name] = (toolCalls[part.name] ?? 0) + 1;
+					}
 				} else if (msg.type === "result") {
+					const sid = this.sessionId ?? "";
+					this.opts.onUsage?.(turnUsage(msg, toolCalls, this.parent.usageSeen.get(sid)));
+					const total = sessionUsageOf(msg);
+					this.parent.usageSeen.set(sid, total);
+					if (this.parked) this.opts.parking?.noteUsage?.(sid, total);
 					stampStop(this.branch, stopReasonForResult(msg), start);
 					if (msg.subtype !== "success") this.ui.notify(`stage turn ended: ${msg.subtype}`, "warning");
 				}

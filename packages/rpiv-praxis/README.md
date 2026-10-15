@@ -8,6 +8,8 @@ no Pi process:
 - **Steps**: any one skill as a checked, logged, resumable single-stage run.
 - **`rpiv-mcp`**: workflows, steps and parked questions as MCP tools, so any
   agent can call them like building blocks and fan out across them.
+- **Evals**: `rpiv-wf eval` runs one workflow across variants (model, effort,
+  tools, memory) and compares outcome, checks, cost and tokens.
 
 Built only on upstream's public APIs, so it follows upstream updates without
 patches to rpiv-workflow.
@@ -42,6 +44,10 @@ node packages/rpiv-praxis/bin/rpiv-wf.mjs step research "how does token refresh 
 | `--permission-mode <mode>` | `auto` | Claude Code permission mode for each stage |
 | `--plugin-dir <dir>` | `rpiv-pi/hosts/claude` | the rpiv Claude plugin |
 | `--cwd <dir>` | current directory | project to run in |
+| `--effort <level>` | Claude Code's | `low` … `max` for every stage |
+| `--tools <a,b>` | all | built-in tools stages may use (`none` = no built-ins) |
+| `--disallowed-tools <a,b>` | none | tools removed from every stage |
+| `--setting-sources <a,b>` | `user,project,local` | what loads, CLAUDE.md included (`none` = nothing) |
 
 Exit codes: `0` completed, `1` failed, `2` usage error, `75` parked (a stage is
 waiting on an answer), `130` interrupted (Ctrl-C stops the run at the current
@@ -121,6 +127,55 @@ Verified live: a headless Claude Code agent given this server started a step
 in two projects in parallel, polled both, and reported both completed; over
 the raw protocol, a step parked, `inbox` showed it, `answer` resumed it, and
 `run_status` reported it completed.
+
+## Evals: compare models, tools and memory on the same workflow
+
+```sh
+node packages/rpiv-praxis/bin/rpiv-wf.mjs eval evals/memory-demo/spec.json --dry-run   # the matrix, no spend
+node packages/rpiv-praxis/bin/rpiv-wf.mjs eval evals/memory-demo/spec.json
+```
+
+A spec names one workflow (or one step), a fixture directory, and variants.
+Every trial runs `rpiv-wf` as its own process in a **fresh copy of the
+fixture**, so trials cannot leak into each other, and `checks` grade the
+result. Output lands in `eval-results/<name>-<time>/` next to the spec:
+`results.jsonl` (one row per trial), `summary.md` (variants side by side), and
+`trials/<variant>__<n>/` (the working copy, the log, per-invocation metrics).
+
+| Spec field | |
+| --- | --- |
+| `name`, `fixture` | eval name; directory copied fresh per trial (relative to the spec) |
+| `workflow` *or* `step`, `input` | what runs |
+| `repeats`, `parallel`, `timeoutMinutes` | trials per variant (default 1); concurrent trials (default 1); per-invocation timeout (default 30) |
+| `defaults` | variant fields applied under every variant |
+| `variants[]` | `name` plus any of: `model`, `effort`, `permissionMode`, `tools` (list or `"none"`), `disallowedTools`, `settingSources` (`user`/`project`/`local` or `"none"`), `concurrency`, `env`, `setup` (shell, run in the copy first), `answers` |
+| `answers` | a scripted person: a trial that parks is answered with these, in order, and resumed |
+| `checks[]` | `{ name, run }` — shell in the copy after the run; exit 0 = pass |
+
+**What "memory" means here.** `settingSources` controls what Claude Code
+loads: `CLAUDE.md` and `.claude/settings` (`project`), your user settings and
+`~/.claude/CLAUDE.md` (`user`), local overrides (`local`); `"none"` loads
+none of it. Other memory is set up per variant with `setup` and `env`: delete
+`.rpiv/lessons` (meta's carried-forward lessons), add a `CLAUDE.md`, point an
+env var at a different memory store. Note `"none"` also stops loading the
+project's own skills from `.claude/skills`; rpiv's skills still load from the
+plugin.
+
+**Cost is per turn, not cumulative.** The SDK reports a resumed session's cost
+cumulatively (measured: $0.021 → $0.051 → $0.074 over three resumed calls),
+so the host charges each turn only the difference, and a parked question
+saves its session's total so the resumed turns start from it. Verified live:
+a trial that parked, was answered from `answers` and resumed was charged the
+parked session's $0.0610 once. One gap: a stage *reattached* by `resume` after
+a failed run starts with no baseline, so that stage's earlier cost is counted
+again.
+
+Every trial runs with `RPIV_WF_KATA=off`: an eval never files tickets.
+
+`evals/memory-demo/` is a working example: does the model follow an instruction
+that exists only in `CLAUDE.md`? First run (one trial each, so a lead, not a
+result): with memory, Sonnet and Haiku both followed it; without it, Sonnet did
+not; Haiku cost about a sixth of Sonnet.
 
 ## How it maps
 

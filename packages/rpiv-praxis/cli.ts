@@ -7,6 +7,7 @@
  *   rpiv-wf resume <run-id|name>    [same flags]
  *   rpiv-wf step <skill> [args…]    one skill as a one-stage run (output checked, logged, resumable)
  *   rpiv-wf steps                   skills a step can run
+ *   rpiv-wf eval <spec.json>        compare variants (model, effort, tools, memory) on one workflow
  *   rpiv-wf inbox                   questions parked runs are waiting on
  *   rpiv-wf answer <run> <n> <choice…> [--no-resume] [same flags]
  *
@@ -22,6 +23,7 @@
  * answer), 130 interrupted.
  */
 
+import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { RunWorkflowResult, WorkflowHostContext } from "@juicesharp/rpiv-workflow";
@@ -32,8 +34,14 @@ import { createRunParking } from "./parking.js";
 import { registerRpivWorkflowSupport } from "./rpiv-support.js";
 import { defaultPluginDir, loadSkillCatalog, skillRegistryHost } from "./skills.js";
 import { registerStep, STEP_PREFIX, stepSkill, stepSkills, stepWorkflowName } from "./steps.js";
+import { addTurn, emptyTotals, listFlag } from "./usage.js";
 
 export const EXIT = { ok: 0, failed: 1, usage: 2, parked: 75, interrupted: 130 } as const;
+
+const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+type Effort = (typeof EFFORTS)[number];
+const SETTING_SOURCES = ["user", "project", "local"] as const;
+type SettingSource = (typeof SETTING_SOURCES)[number];
 
 const PERMISSION_MODES = ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"] as const;
 type PermissionMode = (typeof PERMISSION_MODES)[number];
@@ -44,6 +52,7 @@ const USAGE = `usage:
   rpiv-wf resume <run-id|name> [options]
   rpiv-wf step <skill> [args...] [options]
   rpiv-wf steps
+  rpiv-wf eval <spec.json> [--dry-run] [--out <dir>]
   rpiv-wf inbox
   rpiv-wf answer <run-id|name> <n> <choice...> [--no-resume] [options]
 
@@ -54,6 +63,10 @@ options:
   --permission-mode <mode>   ${PERMISSION_MODES.join(" | ")} (default auto)
   --plugin-dir <dir>         rpiv Claude plugin (default: rpiv-pi/hosts/claude)
   --cwd <dir>                project directory (default: current)
+  --effort <level>           low | medium | high | xhigh | max, for every stage
+  --tools <a,b,...>          built-in tools stages may use (none = no built-ins)
+  --disallowed-tools <a,b>   tools removed from every stage
+  --setting-sources <a,b>    user,project,local (default all; none = no settings or CLAUDE.md memory)
   --no-resume                answer: record the answer without resuming the run
 
 <choice> is an option number, an option label, or free text.`;
@@ -78,6 +91,16 @@ async function defaultApi(cwd: string): Promise<WorkflowApi> {
 	const { loadWorkflows } = await import("@juicesharp/rpiv-workflow/registration");
 	const { runWorkflowByName, resumeWorkflowByRunId } = await import("@juicesharp/rpiv-workflow/runner");
 	return { loadWorkflows, runWorkflowByName, resumeWorkflowByRunId } as WorkflowApi;
+}
+
+/** Write this invocation's outcome and usage as JSON, when a metrics file was asked for. */
+function writeMetrics(file: string | undefined, metrics: object): void {
+	if (!file) return;
+	try {
+		writeFileSync(file, `${JSON.stringify(metrics, null, "\t")}\n`);
+	} catch (err) {
+		process.stderr.write(`[warning] could not write metrics to ${file}: ${String(err)}\n`);
+	}
 }
 
 /** The skill behind a step run, read from the run's header; undefined for any other run. */
@@ -110,7 +133,13 @@ function report(result: RunWorkflowResult, io: CliIo): number {
 export async function main(
 	argv: readonly string[],
 	io: CliIo = { out: (l) => process.stdout.write(`${l}\n`), err: (l) => process.stderr.write(`${l}\n`) },
-	inject: { api?: WorkflowApi; deps?: ClaudeHostDeps; signal?: AbortSignal; kata?: Kata | null } = {},
+	inject: {
+		api?: WorkflowApi;
+		deps?: ClaudeHostDeps;
+		signal?: AbortSignal;
+		kata?: Kata | null;
+		metricsFile?: string;
+	} = {},
 ): Promise<number> {
 	let parsed: ReturnType<
 		typeof parseArgs<{ allowPositionals: true; options: Record<string, { type: "string" | "boolean" }> }>
@@ -127,6 +156,12 @@ export async function main(
 				"plugin-dir": { type: "string" },
 				cwd: { type: "string" },
 				"no-resume": { type: "boolean" },
+				effort: { type: "string" },
+				tools: { type: "string" },
+				"disallowed-tools": { type: "string" },
+				"setting-sources": { type: "string" },
+				out: { type: "string" },
+				"dry-run": { type: "boolean" },
 			},
 		});
 	} catch (err) {
@@ -141,6 +176,12 @@ export async function main(
 		"plugin-dir"?: string;
 		cwd?: string;
 		"no-resume"?: boolean;
+		effort?: string;
+		tools?: string;
+		"disallowed-tools"?: string;
+		"setting-sources"?: string;
+		out?: string;
+		"dry-run"?: boolean;
 	};
 	const [command, target, ...rest] = parsed.positionals;
 	const cwd = resolve(values.cwd ?? process.cwd());
@@ -150,10 +191,28 @@ export async function main(
 		io.err(`--concurrency must be a positive integer\n${USAGE}`);
 		return EXIT.usage;
 	}
+	if (values.effort !== undefined && !EFFORTS.includes(values.effort as Effort)) {
+		io.err(`unknown --effort "${values.effort}"\n${USAGE}`);
+		return EXIT.usage;
+	}
+	const settingSources = listFlag(values["setting-sources"]);
+	if (settingSources?.some((x) => !SETTING_SOURCES.includes(x as SettingSource))) {
+		io.err(`--setting-sources takes user, project, local or none\n${USAGE}`);
+		return EXIT.usage;
+	}
 	if (!PERMISSION_MODES.includes(mode)) {
 		io.err(`unknown --permission-mode "${mode}"\n${USAGE}`);
 		return EXIT.usage;
 	}
+	if (command === "eval") {
+		if (!target) {
+			io.err(USAGE);
+			return EXIT.usage;
+		}
+		const { runEval } = await import("./eval.js");
+		return runEval(resolve(target), { outDir: values.out, dryRun: values["dry-run"], out: io.out });
+	}
+
 	const needsTarget = command === "run" || command === "resume" || command === "step";
 	const known = needsTarget || ["list", "inbox", "answer", "steps"].includes(command ?? "");
 	if (!known || (needsTarget && !target) || (command === "answer" && rest.length < 2)) {
@@ -220,6 +279,7 @@ export async function main(
 		io.err(`no skills found under ${pluginDir}/skills — run \`npm run export:hosts\` or pass --plugin-dir`);
 		return EXIT.usage;
 	}
+	const totals = emptyTotals();
 	const stop = new AbortController();
 	inject.signal?.addEventListener("abort", () => stop.abort(), { once: true });
 	if (inject.signal?.aborted) stop.abort();
@@ -241,6 +301,11 @@ export async function main(
 			signal: stop.signal,
 			notify: (m, l = "info") => io.err(`[${l}] ${m}`),
 			parking: runParking.parking,
+			...(values.effort ? { effort: values.effort as Effort } : {}),
+			...(values.tools !== undefined ? { tools: listFlag(values.tools) } : {}),
+			...(values["disallowed-tools"] !== undefined ? { disallowedTools: listFlag(values["disallowed-tools"]) } : {}),
+			...(settingSources ? { settingSources: settingSources as SettingSource[] } : {}),
+			onUsage: (u) => addTurn(totals, u),
 		},
 		inject.deps ?? (await defaultDeps()),
 	);
@@ -261,14 +326,24 @@ export async function main(
 				)
 			: await api.resumeWorkflowByRunId(host, resumeRef!, opts);
 	const parked = runParking.parked();
+	let code: number;
 	if (parked.length > 0) {
 		for (const p of parked) io.out(formatPark(p));
 		io.out(`parked: answer with \`rpiv-wf answer ${parked[0]!.runId} ${parked[0]!.n} <choice>\``);
-		return EXIT.parked;
-	}
-	if (inject.signal?.aborted) {
+		code = EXIT.parked;
+	} else if (inject.signal?.aborted) {
 		io.err("interrupted");
-		return EXIT.interrupted;
+		code = EXIT.interrupted;
+	} else {
+		code = report(result, io);
 	}
-	return report(result, io);
+	writeMetrics(inject.metricsFile ?? process.env.RPIV_WF_METRICS_FILE, {
+		exitCode: code,
+		runId: result.runId ?? parked[0]?.runId ?? null,
+		stagesCompleted: result.stagesCompleted,
+		error: result.error ?? null,
+		parked: parked.map((p) => ({ n: p.n, stage: p.stage, question: p.questions[0]?.question })),
+		usage: totals,
+	});
+	return code;
 }

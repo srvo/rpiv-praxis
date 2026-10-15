@@ -336,3 +336,63 @@ describe("ClaudeWorkflowHost — parking", () => {
 		expect(child.sessionManager.getSessionId()).toBe("parked-s");
 	});
 });
+
+describe("ClaudeWorkflowHost — usage is per turn, not cumulative", () => {
+	const res = (id: string, cost: number) => ({
+		type: "result",
+		subtype: "success",
+		session_id: id,
+		stop_reason: "end_turn",
+		total_cost_usd: cost,
+		num_turns: 1,
+		modelUsage: {},
+	});
+
+	it("charges a re-prompt only for what it added to the session", async () => {
+		const seen: number[] = [];
+		const sdk = fakeSdk([
+			() => [init("s1"), say("s1", "a"), res("s1", 0.02)],
+			() => [say("s1", "b"), res("s1", 0.05)],
+		]);
+		await run(host(sdk.deps, { onUsage: (u) => seen.push(u.costUsd) }).h, {}, async (c) => {
+			await c.sendUserMessage("again");
+			await c.waitForIdle();
+		});
+		expect(seen[0]).toBeCloseTo(0.02);
+		expect(seen[1]).toBeCloseTo(0.03);
+	});
+
+	it("starts a resumed parked session from the baseline saved with the park", async () => {
+		const seen: number[] = [];
+		const parking = {
+			park: vi.fn(),
+			answerFor: vi.fn(() => ({
+				sessionId: "p1",
+				message: "Answer: Blue",
+				delivered: () => {},
+				usage: { costUsd: 0.06, models: {} },
+			})),
+		};
+		const sdk = fakeSdk([() => [say("p1", "done"), res("p1", 0.08)]]);
+		await run(host(sdk.deps, { parking, onUsage: (u) => seen.push(u.costUsd) }).h);
+		expect(seen[0]).toBeCloseTo(0.02);
+	});
+
+	it("starts a fork from its source session's total", async () => {
+		const seen: number[] = [];
+		const dir = mkdtempSync(join(tmpdir(), "rpiv-fork-usage-"));
+		writeFileSync(join(dir, "src-id.jsonl"), "");
+		const sdk = fakeSdk([
+			() => [init("src-id"), res("src-id", 0.04)],
+			() => [say("forked-id", "x"), res("forked-id", 0.05)],
+		]);
+		const { h } = host(sdk.deps, { onUsage: (u) => seen.push(u.costUsd) });
+		await run(h);
+		await run(h, { fork: { sessionFile: join(dir, "src-id.jsonl") } }, async (c) => {
+			await c.sendUserMessage("continue");
+			await c.waitForIdle();
+		});
+		expect(seen[0]).toBeCloseTo(0.04);
+		expect(seen[1]).toBeCloseTo(0.01);
+	});
+});

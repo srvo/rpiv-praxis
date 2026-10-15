@@ -14,3 +14,6 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Steps: `rpiv-wf step <skill> [args]` runs one skill as a single-stage workflow (`step-<skill>`) with contract-checked output, a run log, parking and resume; `rpiv-wf steps` lists runnable skills. Step workflows are registered only in the process that runs or resumes them, so they can never block an ordinary run.
 - `rpiv-mcp`: an MCP stdio server with `list_workflows`, `list_steps`, `run_workflow`, `run_step`, `run_status`, `inbox`, `answer`. Run tools start `rpiv-wf` detached and return a name to poll.
 - Renamed from `rpiv-claude` to `@ethicalcapital/rpiv-praxis`.
+- Evals: `rpiv-wf eval <spec.json> [--dry-run] [--out <dir>]` runs a workflow or step across variants in fresh fixture copies, answers parks from a script, runs checks, and writes `results.jsonl` and `summary.md`. Example: `evals/memory-demo/`.
+- `rpiv-wf` flags `--effort`, `--tools`, `--disallowed-tools`, `--setting-sources`; `$RPIV_WF_METRICS_FILE` receives the run's outcome and usage at exit.
+- Usage is reported per turn: the SDK's cumulative totals for resumed and forked sessions are turned into differences, and a parked session's total is saved so its resumed turns start from it.

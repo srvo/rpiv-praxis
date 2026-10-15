@@ -58,6 +58,19 @@ describe("createRunParking", () => {
 	});
 });
 
+describe("usage baseline", () => {
+	it("saves a parked session's cumulative usage and hands it back with the answer", () => {
+		const cwd = project();
+		const rp = createRunParking({ cwd, runId: "r1", stop: () => {}, notify: () => {} });
+		rp.parking.park({ prompt: "/skill:pick", sessionId: "s1", questions: [ask] });
+		rp.parking.noteUsage!("other-session", { costUsd: 9, models: {} });
+		rp.parking.noteUsage!("s1", { costUsd: 0.06, models: {} });
+		expect(readParks(cwd, "r1")[0]!.usage).toEqual({ costUsd: 0.06, models: {} });
+		updatePark(cwd, "r1", 1, { status: "answered", answer: "Blue" });
+		expect(rp.parking.answerFor("/skill:pick")!.usage).toEqual({ costUsd: 0.06, models: {} });
+	});
+});
+
 describe("toQuestions", () => {
 	it("keeps question, header, labelled options and multiSelect; drops junk", () => {
 		expect(

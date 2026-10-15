@@ -121,7 +121,9 @@ Upstream runs whole workflows; an agent cannot call one step on its own or start
 - **Steps** — `rpiv-wf step <skill> [args]` runs any one skill as a single-stage workflow with the full guarantees: output checked against the skill's contract, logged, parkable, resumable. `rpiv-wf steps` lists them (rpiv's, the project's, the user's).
 - **`rpiv-mcp`** — an MCP server exposing `list_workflows`, `list_steps`, `run_workflow`, `run_step`, `run_status`, `inbox`, `answer`. Runs start in the background and return a name to poll, so an agent can fan out across steps and workflows itself.
 
-Verified live: a Claude Code agent given the server ran a step in two projects in parallel and reported both completed. Details: [packages/rpiv-praxis/README.md](./packages/rpiv-praxis/README.md#mcp-tools-rpiv-as-building-blocks-for-any-agent).
+- **Evals** — `rpiv-wf eval spec.json` runs one workflow or step across variants (model, effort, tool set, which settings and CLAUDE.md memory load, setup commands) in fresh fixture copies, answers parked questions from a script, runs pass/fail checks, and writes `results.jsonl` plus a side-by-side `summary.md` with cost and tokens.
+
+Verified live: a Claude Code agent given the server ran a step in two projects in parallel and reported both completed; the `memory-demo` eval showed an instruction in `CLAUDE.md` followed with memory loaded and ignored without it. Details: [packages/rpiv-praxis/README.md](./packages/rpiv-praxis/README.md#mcp-tools-rpiv-as-building-blocks-for-any-agent).
 
 ### 7. Smaller changes
 

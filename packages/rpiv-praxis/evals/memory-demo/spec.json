@@ -1,0 +1,19 @@
+{
+	"name": "memory-demo",
+	"fixture": "fixture",
+	"step": "create-handoff",
+	"input": "Short handoff: the memory-demo eval ran; next step is to read the summary.",
+	"repeats": 1,
+	"parallel": 3,
+	"timeoutMinutes": 10,
+	"defaults": { "permissionMode": "bypassPermissions", "setup": "git init -q && git add -A && git -c user.email=e@e -c user.name=eval commit -qm init" },
+	"variants": [
+		{ "name": "memory", "settingSources": ["project"] },
+		{ "name": "no-memory", "settingSources": "none" },
+		{ "name": "haiku-memory", "settingSources": ["project"], "model": "haiku" }
+	],
+	"checks": [
+		{ "name": "handoff written", "run": "ls .rpiv/artifacts/handoffs/*.md" },
+		{ "name": "follows CLAUDE.md", "run": "grep -rq '^MEMORY-MARKER-7Q$' .rpiv/artifacts/handoffs" }
+	]
+}

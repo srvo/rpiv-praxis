@@ -84,11 +84,17 @@ export function createRunParking(opts: {
 				sessionId: park.sessionId,
 				sessionFile: park.sessionFile,
 				message: answerMessage(park),
+				...(park.usage ? { usage: park.usage as never } : {}),
 				delivered: () => {
 					updatePark(opts.cwd, id, park.n, { status: "resumed" });
 				},
 			};
 		},
+	};
+
+	parking.noteUsage = (sessionId, usage) => {
+		const park = recorded.find((p) => p.sessionId === sessionId);
+		if (park && runId) updatePark(opts.cwd, runId, park.n, { usage: usage as never });
 	};
 
 	const lifecycle: LifecycleListeners = {

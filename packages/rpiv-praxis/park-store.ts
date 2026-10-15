@@ -45,6 +45,8 @@ export interface Park {
 	answeredAt?: string;
 	/** kata ticket ref, when one was filed. */
 	kata?: string;
+	/** The parked session's cumulative usage: the resumed turns' cost baseline. */
+	usage?: { costUsd: number; models: Record<string, Record<string, number>> };
 }
 
 export const runsDir = (cwd: string): string => join(cwd, ".rpiv", "workflows", "runs");
