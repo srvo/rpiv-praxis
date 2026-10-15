@@ -9,3 +9,4 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 - `rpiv-wf` runs rpiv-workflow pipelines headless on Claude Code through the Claude Agent SDK: `list`, `run`, `resume`. Implements the runner's executor port (fresh, re-prompt, reattach, fork) over Agent SDK sessions, routes `/skill:` to the rpiv plugin or Claude Code's own skills, and registers rpiv-pi's built-ins, skill contracts and outcome deriver without Pi.
+- `rpiv-wf list` prints workflow load issues to stderr and exits 1 when any is an error, instead of silently omitting a broken pack.

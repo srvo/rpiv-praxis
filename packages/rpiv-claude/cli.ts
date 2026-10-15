@@ -45,7 +45,10 @@ export interface CliIo {
 
 /** The workflow API, injectable so tests drive the CLI without the runner. */
 export interface WorkflowApi {
-	loadWorkflows(cwd: string): Promise<{ workflows: readonly { name: string; description?: string }[] }>;
+	loadWorkflows(cwd: string): Promise<{
+		workflows: readonly { name: string; description?: string }[];
+		issues?: readonly { severity: string; message: string }[];
+	}>;
 	runWorkflowByName(ctx: WorkflowHostContext, name: string, input: string, opts: object): Promise<RunWorkflowResult>;
 	resumeWorkflowByRunId(ctx: WorkflowHostContext, ref: string, opts: object): Promise<RunWorkflowResult>;
 }
@@ -116,9 +119,11 @@ export async function main(
 
 	const api = inject.api ?? (await defaultApi(cwd));
 	if (command === "list") {
-		const { workflows } = await api.loadWorkflows(cwd);
+		const { workflows, issues = [] } = await api.loadWorkflows(cwd);
 		for (const w of workflows) io.out(w.description ? `${w.name}\t${w.description}` : w.name);
-		return EXIT.ok;
+		// `run` refuses on any error-severity issue; say so here rather than list a set it will not run.
+		for (const i of issues) io.err(`[${i.severity}] ${i.message}`);
+		return issues.some((i) => i.severity === "error") ? EXIT.failed : EXIT.ok;
 	}
 
 	const pluginDir = resolve(values["plugin-dir"] ?? defaultPluginDir());

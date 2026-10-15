@@ -1,7 +1,7 @@
 ---
 name: commit
 description: Create structured git commits by analyzing staged and unstaged changes and grouping them logically into one or more commits with clear, descriptive messages. Use when the user asks to commit, says "commit this" or "commit my changes", wants help writing a commit message, or has finished a chunk of work that needs committing.
-argument-hint: "[message] [--baseline <path>]"
+argument-hint: "[message] [--baseline <path>] [--reviewed] [--evidence <path>]"
 allowed-tools: Bash(git *), Bash(node *), Read, Glob, Grep, Bash(node "${CLAUDE_SKILL_DIR}/../_shared/git-changes.mjs")
 ---
 
@@ -11,7 +11,7 @@ You are tasked with creating git commits for repository changes.
 
 ## Input
 
-`$ARGUMENTS` — optional commit message hint, optionally with `--baseline <path>` (a workflow's run-start snapshot of paths that were already dirty before the run began). Peel the `--baseline` flag first; the remainder (if any) is the message hint. Empty/literal → infer from history and `git diff`.
+`$ARGUMENTS` — optional commit message hint, optionally with `--baseline <path>` (a workflow's run-start snapshot of paths that were already dirty before the run began) `--reviewed` (a workflow reached this commit only through its review gate — see Step 3), and `--evidence <path>` (the review that cleared this change; its scope is what the commit may take). Peel all three flags first; the remainder (if any) is the message hint. Empty/literal → infer from history and `git diff`.
 
 ## Metadata
 
@@ -57,7 +57,14 @@ node "${CLAUDE_SKILL_DIR}/../_shared/git-changes.mjs" --baseline <path>
 3. **Present your plan to the user:**
    - List the files you plan to add for each commit
    - Show the commit message(s) you'll use
-   - Use the `AskUserQuestion` tool to confirm the commit plan. Question: "{N} commit(s) with {M} files. Proceed?". Header: "Commit". Options: "Commit (Recommended)" (Create the commit(s) as planned); "Adjust" (Change the grouping or commit messages); "Review files" (Show me the full diff before committing).
+   - **When `--reviewed` was provided, do not ask — go straight to Step 4.** The workflow dispatched this commit only after the change cleared its review gate (a passing validate verdict, a zero-blocker code review, or a passing grader panel), and an unattended run has no one to answer a confirmation. Every other rule still holds: stage only `---status---` paths, never a pre-existing one, and stop rather than commit if you find credentials or keys. With no one to deselect files:
+     - **Never stage rpiv's run state** — anything under `.rpiv/artifacts/` or `.rpiv/workflows/runs/` — even when a repo does not gitignore it.
+     - **Stage only this run's work, decided by evidence, not guesswork:**
+       - With `--baseline`: every path in the re-run `---status---` is this run's (pre-existing dirt is already listed separately).
+       - With `--evidence <path>`: read that review. Its `scope` / `review_type` says which changes it covered (e.g. the working tree, the staged set); re-run the matching `git status` / `git diff` and take exactly those paths.
+       - Neither, or a path neither covers: leave it unstaged.
+     - **If that leaves nothing to stage while `---status---` lists changes, do not commit.** End with a line starting `NOT COMMITTED:` that lists the paths and why none could be tied to this run, so the outcome is not mistaken for "nothing to commit".
+   - Otherwise, use the `AskUserQuestion` tool to confirm the commit plan. Question: "{N} commit(s) with {M} files. Proceed?". Header: "Commit". Options: "Commit (Recommended)" (Create the commit(s) as planned); "Adjust" (Change the grouping or commit messages); "Review files" (Show me the full diff before committing).
      - `Header` is capped at ≤16 characters (`MAX_HEADER_LENGTH = 16` — longer values are rejected).
 
 4. **Execute upon confirmation:**

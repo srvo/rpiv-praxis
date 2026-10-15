@@ -36,6 +36,19 @@ describe("rpiv-wf", () => {
 		expect(h.out).toEqual(["build\tthe big one", "mine"]);
 	});
 
+	it("reports load issues on list and fails when any is an error", async () => {
+		const h = harness();
+		vi.mocked(h.api.loadWorkflows).mockResolvedValueOnce({
+			workflows: [{ name: "build" }],
+			issues: [
+				{ severity: "warning", message: "w" },
+				{ severity: "error", message: "pack broken" },
+			],
+		});
+		expect(await h.go(["list"])).toBe(EXIT.failed);
+		expect(h.err).toEqual(["[warning] w", "[error] pack broken"]);
+	});
+
 	it("runs a workflow with the joined input, a registry host and the requested name", async () => {
 		const h = harness({ success: true, stagesCompleted: 3, runId: "r9", lastArtifact: "plan.md" });
 		const code = await h.go(["run", "build", "add", "dark", "mode", "--name", "dm", "--plugin-dir", plugin()]);

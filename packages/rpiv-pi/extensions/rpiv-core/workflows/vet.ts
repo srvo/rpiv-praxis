@@ -15,6 +15,7 @@ import {
 	captureReviewScope,
 	IMPLEMENT_DAG_FANOUT,
 	implementScopeCheckVet,
+	REVIEWED_COMMIT_PROMPT,
 	reconcile,
 	scopeQuarantine,
 } from "../built-ins/index.ts";
@@ -85,7 +86,7 @@ const vetWorkflow = defineWorkflow({
 		// backward-jump budget (the plan-fix precedent).
 		"reconcile-fix": produces.prompt({ prompt: RECONCILE_FIX_PROMPT, outcome: RECONCILE_FIX_OUTCOME }),
 		validate: produces(),
-		commit: acts({ outcome: gitCommitOutcome }),
+		commit: acts({ prompt: REVIEWED_COMMIT_PROMPT, outcome: gitCommitOutcome }),
 	},
 	edges: {
 		goal: "code-review",

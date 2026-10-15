@@ -13,6 +13,9 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 - The built-in workflows, skill-contract normalisation and outcome derivation no longer import Pi at runtime, so `rpiv-claude` can load them under Claude Code. `parseFrontmatter` is now local (`frontmatter.ts`, tested against Pi's for identical output), the Pi-free contract helpers moved to `skill-contracts-core.ts` (re-exported from `skill-contracts-source.ts`), and `isModuleNotFound` moved to `module-errors.ts` (re-exported from `utils.ts`). No behaviour change in Pi.
 
+### Fixed
+- Unattended commit stages no longer end as a silent no-op. Upstream's `commit` skill always asked for confirmation; with no one to answer (Pi without UI, or Claude Code), the model asked in chat, committed nothing, and `gitCommitOutcome` recorded success. The skill now takes `--reviewed`, which skips the confirmation, and every built-in commit stage sets it only when the gate that routed there passed: validate `pass` (`build`, `ship`), a zero-blocker code review (`vet`, `polish`), or the last unit's own gate (`meta`; a unit advanced red still asks). Without a person to deselect files the skill never stages `.rpiv/artifacts/` or `.rpiv/workflows/runs/`, stages only what `--baseline` or the new `--evidence <review>` ties to the run, and otherwise commits nothing and says `NOT COMMITTED:`. `vet` and `polish` now dispatch commit as `/skill:commit [--reviewed] --evidence <review>` instead of passing the review path as a message hint. Commit prompts moved to `built-ins/commit-prompt.ts`.
+
 ## [2.13.9] - 2026-10-17
 
 ### Changed

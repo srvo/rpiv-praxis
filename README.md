@@ -1,5 +1,8 @@
 # rpiv-mono
 
+> [!IMPORTANT]
+> **This is Ethical Capital's fork of [juicesharp/rpiv-mono](https://github.com/juicesharp/rpiv-mono).** It adds Claude Code (and other agent harnesses) as first-class hosts alongside Pi, plus unattended-run fixes. Everything upstream still works the same under Pi. What changed, and why, is in [How this fork differs from upstream](#how-this-fork-differs-from-upstream). The badges and `npm install` / `pi install` lines below point at upstream's published packages; this fork's additions run from a checkout.
+
 [![CI](https://img.shields.io/github/actions/workflow/status/juicesharp/rpiv-mono/ci.yml?branch=main&label=CI)](https://github.com/juicesharp/rpiv-mono/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/juicesharp/rpiv-mono/branch/main/graph/badge.svg?v=2)](https://codecov.io/gh/juicesharp/rpiv-mono)
 [![tests](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/juicesharp/rpiv-mono/badges/tests.json)](https://github.com/juicesharp/rpiv-mono/actions/workflows/ci.yml)
@@ -49,6 +52,71 @@ Five packages you do not `pi install`. One is on npm as a library; four are `pri
 | [`rpiv-claude`](./packages/rpiv-claude) | `rpiv-wf`: runs `/wf` workflows headless on Claude Code through the Claude Agent SDK | **Not published.** Run from a checkout: `node packages/rpiv-claude/bin/rpiv-wf.mjs run <workflow> "<brief>"` |
 | [`rpiv-site`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-site) | The [rpiv-pi.com](https://rpiv-pi.com) site (static Astro build) | **Not published.** Built from this repo with `npm run build:site`, deployed to GitHub Pages by CI |
 | [`test-utils`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/test-utils) | Shared test fixtures (`@juicesharp/rpiv-test-utils`) | **Not published.** Symlinked by npm workspaces; imported by the test suite only |
+
+## How this fork differs from upstream
+
+Upstream is a Pi-only toolkit. This fork keeps every Pi path intact and adds a second host. Changes, grouped by what they do:
+
+### 1. Skills and subagents run in other harnesses
+
+| | Upstream | This fork |
+| --- | --- | --- |
+| Where skills and subagents run | Pi only | Pi, Claude Code (plugin), and Agent Skills harnesses (Codex, OpenCode, Factory, …) |
+| How | — | `npm run export:hosts` renders `packages/rpiv-pi/skills/` and `agents/` into `packages/rpiv-pi/hosts/` (generated, committed). CI's `npm run check:hosts` fails on drift. `.claude-plugin/marketplace.json` at the root makes the repo a Claude Code marketplace |
+| Source of truth | `skills/`, `agents/` | unchanged — `hosts/` is never edited by hand |
+
+Detail and install steps: [Other harnesses](#other-harnesses-claude-code-codex-opencode-factory).
+
+### 2. `/wf` workflows run on Claude Code — new package `rpiv-claude`
+
+| | Upstream | This fork |
+| --- | --- | --- |
+| Workflow runner host | Pi's `AgentSession` (`SdkWorkflowHost` in rpiv-pi) | also the Claude Agent SDK, via `packages/rpiv-claude` (`rpiv-wf list / run / resume`) |
+| Built-ins outside Pi | not possible (they imported Pi at runtime) | load without Pi installed |
+| Run state | `.rpiv/workflows/runs/` | same files; a run started on one host lists and resumes on the other |
+
+rpiv-workflow itself is unchanged: its runner was already host-agnostic. See [packages/rpiv-claude/README.md](./packages/rpiv-claude/README.md) for the mapping and the differences from Pi (headless only, Anthropic models only, no lane console).
+
+### 3. rpiv-pi no longer needs Pi at runtime on the workflow path
+
+Same behaviour under Pi; the code moved so a second host can load it.
+
+| Upstream | This fork |
+| --- | --- |
+| `parseFrontmatter` imported from `@earendil-works/pi-coding-agent` in 5 built-in modules | local copy in `extensions/rpiv-core/frontmatter.ts`, tested for identical output against Pi's (BOM, CRLF, no fence, invalid YAML, …) |
+| Contract normalisation lived in `skill-contracts-source.ts` beside Pi's skill loader | Pi-free half moved to `skill-contracts-core.ts`; still re-exported from the old module |
+| `isModuleNotFound` in `utils.ts`, which imports Pi | moved to `module-errors.ts`; still re-exported from `utils.ts` |
+
+### 4. Unattended commits (behaviour change in all built-in workflows)
+
+Upstream's `commit` skill always asks for confirmation. In a headless run (Pi without UI, or Claude Code) there is no one to answer: the model asked in chat, committed nothing, and `gitCommitOutcome` recorded the stage as a successful no-op. Observed in 2 of 4 live runs.
+
+This fork:
+
+- **`--reviewed` flag on `/skill:commit`.** With it the skill commits without asking. Every built-in commit stage sets it **only when the gate that routed the run there passed**, read from run state, not assumed per workflow:
+
+  | Workflow | `--reviewed` when | Scope fence |
+  | --- | --- | --- |
+  | `build`, `ship` | latest validate verdict is `pass` | `--baseline` (unchanged) |
+  | `vet`, `polish` | latest code review has `blockers_count: 0` | `--evidence <that review>` — new; vet/polish previously passed the review path as a message hint |
+  | `meta` | the last unit's own gate passed (a unit advanced red by `onExhausted: "advance"` still asks) | `--baseline` |
+
+- **Guardrails when it doesn't ask:** never stage `.rpiv/artifacts/` or `.rpiv/workflows/runs/`, even in repos that do not gitignore them; stage only paths the baseline or the review's scope ties to this run; if nothing can be tied, do not commit and end with a `NOT COMMITTED:` line.
+- Interactive Pi runs that reach a gated commit also skip the confirmation now. That is the intended trade: the change was already gated.
+
+Verified live (Claude Code, 9 runs): with evidence or baseline, only the run's file was committed; with neither, nothing was committed and the `NOT COMMITTED:` line appeared. Run logs and a pre-existing unrelated file were never staged.
+
+### 5. Smaller changes
+
+- `scripts/check-file-sizes.mjs` and `biome.json` skip the generated `hosts/` tree.
+- `version:*` scripts re-run `export:hosts` so the plugin version tracks the packages.
+- `rpiv-wf list` prints workflow load errors instead of silently omitting broken packs.
+
+### Not changed (known gaps)
+
+- Other workflow stages still assume a person can answer: `research` (write-gate), `slice` (decomposition approval), `design-review` (the deliberate human design checkpoint in `build`), `blueprint` (several approvals, in `vet`/`polish`), `architecture-review` (human triage by design — `polish` is effectively interactive-only), `implement` (code/plan mismatch). Headless, these fail loudly (a missing artifact halts the stage) rather than silently; none is changed here pending a decision on each.
+- `gitCommitOutcome` still treats a no-op commit as success. The `NOT COMMITTED:` line makes it visible in the transcript but not in the run result.
+- Upstream issues and releases stay at juicesharp/rpiv-mono; this fork does not publish to npm.
 
 ## Other harnesses: Claude Code, Codex, OpenCode, Factory
 

@@ -284,23 +284,8 @@ const VALIDATE_GOAL_PROMPT: PromptFn = ({ state }) => {
 	return parts.join(" ");
 };
 
-/**
- * Build's commit dispatch: thread the run-start baseline so the commit skill
- * fences pre-existing dirt off the commit — `git-changes.mjs` takes the path
- * as a flag, so there is no fixed rendezvous file for concurrent/repeat runs
- * to clobber. Prompt-dispatched deliberately: the inherited rolling primary
- * (the validation report path) was reaching the skill as a meaningless
- * message-hint argument anyway; owning the message replaces that noise with
- * the one flag the skill actually consumes.
- */
-const COMMIT_BASELINE_PROMPT: PromptFn = ({ state }) => {
-	const baseline = goalBaselinePath(state);
-	return baseline ? `/skill:commit --baseline ${baseline}` : "/skill:commit";
-};
-
 export type { GitStatusEntry };
 export {
-	COMMIT_BASELINE_PROMPT,
 	captureGoal,
 	captureReviewScope,
 	gitDirtyEntries,
