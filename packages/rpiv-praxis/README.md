@@ -68,8 +68,10 @@ Without the global install, `rpiv-wf` is
 | `--tools <a,b>` | all | built-in tools stages may use (`none` = no built-ins) |
 | `--disallowed-tools <a,b>` | none | tools removed from every stage |
 | `--setting-sources <a,b>` | `user,project,local` | what loads, CLAUDE.md included (`none` = nothing) |
-| `--max-cost <usd>` | none | stop once this invocation has cost this much |
-| `--timeout <minutes>` | none | stop this invocation after this long |
+| `--max-cost <usd>` | none | stop once the run has cost this much, across resumes |
+| `--timeout <minutes>` | none | stop once the run has run this long, across resumes |
+| `--stage-max-cost <usd>` | none | stop once any one stage has cost this much |
+| `--stage-max-tokens <n>` | none | stop once any one stage has used this many tokens |
 
 | Exit | Means | Next |
 | --- | --- | --- |
@@ -77,7 +79,7 @@ Without the global install, `rpiv-wf` is
 | `1` | failed (a stage or gate failed) | read the log; `resume` retries the failed stage |
 | `2` | usage error | |
 | `75` | parked: a stage is waiting on an answer | `inbox`, then `answer` |
-| `76` | stopped at `--max-cost` | `resume` |
+| `76` | stopped at a cost or token cap | `resume` |
 | `124` | stopped at `--timeout` | `resume` |
 | `130` | interrupted (Ctrl-C / SIGTERM) | `resume` |
 
@@ -98,9 +100,13 @@ evals that survive a crash. What to set:
   asking. Questions still park (exit 75); they never hang. The SDK prints a
   `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED` warning in this mode; it is expected
   (the callback still sees `AskUserQuestion`, which is all parking needs).
-- **Caps.** `--max-cost` and `--timeout` cover one invocation. A run resumed
-  three times can spend three caps, so a wrapper that resumes in a loop must
-  keep its own total (the metrics file has it). At the cost cap, turns already
+- **Caps.** Every stage turn appends a `usage` row (tokens always; cost only
+  when the SDK reports one, never an invented price) to the run's JSONL, and
+  each invocation appends an `invocation` row (`run`, `resumed`, `end`). So
+  `--max-cost`, `--timeout` and the per-stage caps count what earlier
+  invocations of the run spent. Through a gateway the SDK reports no cost;
+  `--max-cost` then warns that it cannot be enforced, and the token caps are
+  the ones that bind. At the cost cap, turns already
   running finish and their work is kept; no new turn starts. A run therefore
   ends somewhat over its cap, by what was in flight, and if that was its last
   stage it completes (exit 0). The timeout cuts running turns off; the

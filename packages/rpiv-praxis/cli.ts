@@ -33,6 +33,7 @@ import { detectKata, type Kata } from "./kata.js";
 import { formatPark, openParks, readParks, resolveChoice, resolveRunId, updatePark } from "./park-store.js";
 import { createRunParking } from "./parking.js";
 import { registerRpivWorkflowSupport } from "./rpiv-support.js";
+import { mergeLifecycles, RunLedger } from "./run-ledger.js";
 import { defaultPluginDir, loadSkillCatalog, skillRegistryHost } from "./skills.js";
 import { registerStep, STEP_PREFIX, stepSkill, stepSkills, stepWorkflowName } from "./steps.js";
 import { addTurn, emptyTotals, listFlag } from "./usage.js";
@@ -69,14 +70,19 @@ options:
   --tools <a,b,...>          built-in tools stages may use (none = no built-ins)
   --disallowed-tools <a,b>   tools removed from every stage
   --setting-sources <a,b>    user,project,local (default all; none = no settings or CLAUDE.md memory)
-  --max-cost <usd>           stop the run once it has cost this much (exit 76, resumable)
-  --timeout <minutes>        stop the run after this long (exit 124, resumable)
+  --max-cost <usd>           stop the run once it has cost this much in total, across resumes (exit 76, resumable)
+  --timeout <minutes>        stop the run once it has run this long in total, across resumes (exit 124, resumable)
+  --stage-max-cost <usd>     stop the run once any one stage has cost this much (exit 76)
+  --stage-max-tokens <n>     stop the run once any one stage has used this many tokens (exit 76)
   --no-resume                answer: record the answer without resuming the run
 
 <choice> is an option number, an option label, or free text.
 
 exit codes: 0 completed, 1 failed, 2 usage, 75 parked (answer it), 76 stopped at
---max-cost, 124 stopped at --timeout, 130 interrupted. Stopped runs resume.`;
+a cost/token cap, 124 stopped at --timeout, 130 interrupted. Stopped runs resume.
+
+Usage (tokens always, cost when the SDK reports one) is written to the run's
+JSONL as one row per stage turn, so caps count what earlier invocations spent.`;
 
 export interface CliIo {
 	out: (line: string) => void;
@@ -173,6 +179,8 @@ export async function main(
 				out: { type: "string" },
 				"max-cost": { type: "string" },
 				timeout: { type: "string" },
+				"stage-max-cost": { type: "string" },
+				"stage-max-tokens": { type: "string" },
 				continue: { type: "string" },
 				"dry-run": { type: "boolean" },
 				help: { type: "boolean", short: "h" },
@@ -197,6 +205,8 @@ export async function main(
 		out?: string;
 		"max-cost"?: string;
 		timeout?: string;
+		"stage-max-cost"?: string;
+		"stage-max-tokens"?: string;
 		continue?: string;
 		"dry-run"?: boolean;
 		help?: boolean;
@@ -215,9 +225,13 @@ export async function main(
 	}
 	const maxCost = values["max-cost"] === undefined ? undefined : Number(values["max-cost"]);
 	const timeoutMin = values.timeout === undefined ? undefined : Number(values.timeout);
+	const stageMaxCost = values["stage-max-cost"] === undefined ? undefined : Number(values["stage-max-cost"]);
+	const stageMaxTokens = values["stage-max-tokens"] === undefined ? undefined : Number(values["stage-max-tokens"]);
 	for (const [flag, v] of [
 		["--max-cost", maxCost],
 		["--timeout", timeoutMin],
+		["--stage-max-cost", stageMaxCost],
+		["--stage-max-tokens", stageMaxTokens],
 	] as const) {
 		if (v !== undefined && !(Number.isFinite(v) && v > 0)) {
 			io.err(`${flag} must be a positive number\n${USAGE}`);
@@ -333,16 +347,40 @@ export async function main(
 		// A budget stop lets running turns finish (their work is kept); a timeout cuts them off.
 		(why === "budget" ? halt : stop).abort();
 	};
+	const priorRunId = command === "run" || command === "step" ? undefined : resolveRunId(cwd, resumeRef!);
+	const ledger = new RunLedger(cwd, priorRunId ? "resumed" : "run", priorRunId);
+	// --timeout counts the wall-clock earlier invocations of this run already used.
 	const timer =
 		timeoutMin === undefined
 			? undefined
-			: setTimeout(() => stopFor("timeout", `--timeout ${timeoutMin} min reached`), timeoutMin * 60_000);
+			: setTimeout(
+					() => stopFor("timeout", `--timeout ${timeoutMin} min reached`),
+					Math.max(0, timeoutMin * 60_000 - ledger.totals.elapsedMs),
+				);
 	timer?.unref();
+	let costUnreportedWarned = false;
+	const checkCaps = (stage: string | undefined) => {
+		const t = ledger.totals;
+		if (maxCost !== undefined && t.costReported && t.costUsd >= maxCost) {
+			stopFor("budget", `--max-cost $${maxCost} reached ($${t.costUsd.toFixed(4)} across the run)`);
+		}
+		if (maxCost !== undefined && !t.costReported && t.tokens > 0 && !costUnreportedWarned) {
+			costUnreportedWarned = true;
+			warn("--max-cost cannot be enforced: the SDK reports no cost for these turns (tokens are still recorded)");
+		}
+		const s = stage === undefined ? undefined : t.stages[stage];
+		if (s && stageMaxCost !== undefined && s.costUsd >= stageMaxCost) {
+			stopFor("budget", `stage "${stage}" reached --stage-max-cost $${stageMaxCost} ($${s.costUsd.toFixed(4)})`);
+		}
+		if (s && stageMaxTokens !== undefined && s.tokens >= stageMaxTokens) {
+			stopFor("budget", `stage "${stage}" reached --stage-max-tokens ${stageMaxTokens} (${s.tokens})`);
+		}
+	};
 	inject.signal?.addEventListener("abort", () => stop.abort(), { once: true });
 	if (inject.signal?.aborted) stop.abort();
 	const runParking = createRunParking({
 		cwd,
-		runId: command === "run" || command === "step" ? undefined : resolveRunId(cwd, resumeRef!),
+		runId: priorRunId,
 		kata,
 		stop: () => stop.abort(),
 		notify: (m) => io.err(`[info] ${m}`),
@@ -363,11 +401,10 @@ export async function main(
 			...(values.tools !== undefined ? { tools: listFlag(values.tools) } : {}),
 			...(values["disallowed-tools"] !== undefined ? { disallowedTools: listFlag(values["disallowed-tools"]) } : {}),
 			...(settingSources ? { settingSources: settingSources as SettingSource[] } : {}),
-			onUsage: (u) => {
+			onUsage: (u, info = { sessionId: "" }) => {
 				addTurn(totals, u);
-				if (maxCost !== undefined && totals.costUsd >= maxCost) {
-					stopFor("budget", `--max-cost $${maxCost} reached ($${totals.costUsd.toFixed(4)})`);
-				}
+				ledger.record(u, info);
+				checkCaps(info.stage);
 			},
 		},
 		inject.deps ?? (await defaultDeps()),
@@ -375,7 +412,7 @@ export async function main(
 	const opts = {
 		host: skillRegistryHost(catalog),
 		signal: stop.signal,
-		lifecycle: runParking.lifecycle,
+		lifecycle: mergeLifecycles(ledger.lifecycle, runParking.lifecycle),
 		trigger: { kind: "programmatic", source: "rpiv-praxis" },
 		...(values.name ? { name: values.name } : {}),
 	};
@@ -389,6 +426,7 @@ export async function main(
 				)
 			: await api.resumeWorkflowByRunId(host, resumeRef!, opts);
 	if (timer) clearTimeout(timer);
+	ledger.end();
 	const parked = runParking.parked();
 	let code: number;
 	if (parked.length > 0) {

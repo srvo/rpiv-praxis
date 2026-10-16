@@ -74,8 +74,9 @@ export interface ClaudeHostOptions {
 	disallowedTools?: string[];
 	/** Which settings (and CLAUDE.md memory) stages load: default user + project + local. */
 	settingSources?: SettingSource[];
-	/** Called once per turn with what it cost: the raw material for evals. */
-	onUsage?: (usage: TurnUsage) => void;
+	/** Called once per turn with what it cost: the raw material for evals and the run ledger.
+	 *  `info.stage` is the engine's stage name for the child (undefined when the engine gave none). */
+	onUsage?: (usage: TurnUsage, info: { stage?: string; sessionId: string }) => void;
 }
 
 type SettingSource = NonNullable<Options["settingSources"]>[number];
@@ -257,7 +258,15 @@ export class ClaudeWorkflowHost implements WorkflowHostContext {
 			if (s?.aborted) abort.abort();
 			s?.addEventListener("abort", onAbort, { once: true });
 		}
-		const child = new ClaudeChildSession(this, this.opts, this.deps, options.model, abort, options.prompt);
+		const child = new ClaudeChildSession(
+			this,
+			this.opts,
+			this.deps,
+			options.model,
+			abort,
+			options.prompt,
+			options.stage,
+		);
 		try {
 			if (options.reattach) {
 				const file = options.reattach.sessionFile;
@@ -315,6 +324,8 @@ class ClaudeChildSession implements WorkflowSessionContext {
 		private readonly abort: AbortController,
 		/** The stage prompt this child was opened for: the key a park is found by on resume. */
 		private readonly stagePrompt: string,
+		/** The engine's stage name for this child (attribution for usage and parks). */
+		private readonly stage?: string,
 	) {
 		this.cwd = parent.cwd;
 		this.maxConcurrency = parent.maxConcurrency;
@@ -428,7 +439,10 @@ class ClaudeChildSession implements WorkflowSessionContext {
 					}
 				} else if (msg.type === "result") {
 					const sid = this.sessionId ?? "";
-					this.opts.onUsage?.(turnUsage(msg, toolCalls, this.parent.usageSeen.get(sid)));
+					this.opts.onUsage?.(turnUsage(msg, toolCalls, this.parent.usageSeen.get(sid)), {
+						...(this.stage !== undefined ? { stage: this.stage } : {}),
+						sessionId: sid,
+					});
 					const total = sessionUsageOf(msg);
 					this.parent.usageSeen.set(sid, total);
 					if (this.parked) this.opts.parking?.noteUsage?.(sid, total);

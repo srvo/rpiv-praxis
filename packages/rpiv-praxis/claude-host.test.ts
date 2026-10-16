@@ -379,6 +379,13 @@ describe("ClaudeWorkflowHost — usage is per turn, not cumulative", () => {
 		expect(seen[1]).toBeCloseTo(0.03);
 	});
 
+	it("attributes each turn's usage to the engine's stage name for the child", async () => {
+		const seen: Array<{ stage?: string; sessionId: string }> = [];
+		const sdk = fakeSdk([() => [init("s1"), say("s1", "a"), res("s1", 0.02)]]);
+		await run(host(sdk.deps, { onUsage: (_u, info) => seen.push(info) }).h, { stage: "impl (phase-2)" });
+		expect(seen).toEqual([{ stage: "impl (phase-2)", sessionId: "s1" }]);
+	});
+
 	it("starts a resumed parked session from the baseline saved with the park", async () => {
 		const seen: number[] = [];
 		const parking = {

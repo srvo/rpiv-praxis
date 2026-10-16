@@ -10,7 +10,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StageDef, Workflow } from "./api.js";
 import { defineWorkflow, produces } from "./api.js";
 import { fs as fsHandle } from "./handle.js";
@@ -202,5 +202,36 @@ describe("stage completion proof (runWorkflow)", () => {
 		expect(seen).toHaveLength(1);
 		expect(seen[0]).toBeGreaterThanOrEqual(before);
 		expect(seen[0]).toBeLessThanOrEqual(Date.now());
+	});
+});
+
+describe("spawnChild carries the stage name (host attribution)", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-proof-stage-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("every unit's spawn names its decorated stage", async () => {
+		const wf = {
+			name: "proof-stage",
+			start: "impl",
+			stages: {
+				impl: produces({
+					outcome: announced,
+					loop: fanout({ units: () => [{ prompt: "u0", label: "u0", id: "u0" }] }),
+				}),
+			},
+			edges: { impl: "stop" },
+		} as Workflow;
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("Wrote .rpiv/artifacts/research/u0.md", "stop")] }],
+		});
+		expect((await runWorkflow(chain.ctx, { workflow: wf, input: "x" })).success).toBe(true);
+		const opts = vi.mocked(chain.ctx.spawnChild).mock.calls[0]?.[0] as { stage?: string };
+		expect(opts.stage).toBe("impl (u0)");
 	});
 });

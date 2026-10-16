@@ -54,7 +54,7 @@ type OpenMode = { reattach: { sessionFile: string } } | { fork: { sessionFile: s
  */
 function openChild(
 	ctx: WorkflowHostContext,
-	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex">,
+	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex"> & { stageName?: string },
 	body: (child: WorkflowSessionContext) => Promise<void>,
 	mode?: OpenMode,
 ): Promise<void> {
@@ -67,6 +67,7 @@ function openChild(
 		// of which map to the host's reserved single-unit slot so the lane row keeps
 		// showing the one live session. Inert on a non-lane host.
 		unitIndex: s.laneUnitIndex,
+		...(s.stageName !== undefined ? { stage: s.stageName } : {}),
 		...mode,
 		withSession: async (child) => {
 			await child.waitForIdle();
@@ -81,7 +82,7 @@ function openChild(
  */
 export function spawnChildAndRun(
 	ctx: WorkflowHostContext,
-	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex">,
+	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex"> & { stageName?: string },
 	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {
 	return openChild(ctx, s, body);
@@ -102,7 +103,7 @@ export function spawnChildAndRun(
  */
 export function reattachChildSession(
 	ctx: WorkflowHostContext,
-	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex">,
+	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex"> & { stageName?: string },
 	sessionFile: string,
 	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {
@@ -127,7 +128,7 @@ export function reattachChildSession(
  */
 export function forkChildSession(
 	ctx: WorkflowHostContext,
-	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex">,
+	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex"> & { stageName?: string },
 	sessionFile: string,
 	body: (child: WorkflowSessionContext) => Promise<void>,
 ): Promise<void> {

@@ -163,6 +163,14 @@ export interface WorkflowHostContext {
 		 * it NEVER affects execution.
 		 */
 		unitIndex?: number;
+		/**
+		 * The activation's JSONL stage name (decorated for loop units, e.g.
+		 * `impl (phase-2)`), so a host can attribute what the child does — its
+		 * usage, a question it parks — to the stage that actually did it, even
+		 * when fan-out units run concurrently. Observability only; never affects
+		 * execution.
+		 */
+		stage?: string;
 		withSession: (child: WorkflowSessionContext) => Promise<T>;
 	}): Promise<T>;
 }
