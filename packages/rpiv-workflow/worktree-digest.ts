@@ -9,13 +9,15 @@
  * agent asked to fix changed nothing observable ⇒ the retry is skipped
  * (fail fast) instead of re-running the same failing validation.
  *
- * Two components concatenated then hashed (a tracked-only digest
+ * Three components concatenated then hashed (a tracked-only digest
  * misses a fix that touches ONLY a gitignored file under `.rpiv/artifacts/`,
  * which `.gitignore` ignores, and would false-skip the gate):
  *   1. the default git recipe — `git status --porcelain` + `git diff` (the same
  *      `execFileSync("git", [...], { stdio: ["ignore","pipe","ignore"] })`
  *      posture built-ins/goal-baseline.ts's `writeCommitBaseline` uses);
- *   2. `hashArtifactsTree(cwd)` — a recursive walk of `<cwd>/.rpiv/artifacts/`
+ *   2. `hashUntrackedFiles(cwd)` — contents of untracked, non-ignored files,
+ *      which status/diff report by name only (kata zdd9);
+ *   3. `hashArtifactsTree(cwd)` — a recursive walk of `<cwd>/.rpiv/artifacts/`
  *      hashing each file's relative path + contents so a gitignored-only
  *      artifact revision DOES change the digest.
  *
@@ -98,6 +100,35 @@ function readdirRecursively(root: string, excludedTopDirs?: ReadonlySet<string>)
 }
 
 /**
+ * Hash the CONTENTS of untracked, non-ignored files (`git ls-files -o
+ * --exclude-standard`). `git status --porcelain` lists an untracked file by
+ * name only and `git diff HEAD` omits it entirely, so without this a fix to a
+ * NEW file (one the stage created) reads as "unchanged" and the retry is
+ * wrongly fail-fast skipped (kata zdd9). Throws on git failure, which the
+ * caller turns into `undefined` (proceed).
+ */
+function hashUntrackedFiles(cwd: string): string {
+	const listing = execFileSync("git", ["ls-files", "-o", "--exclude-standard", "-z"], {
+		cwd,
+		encoding: "utf-8",
+		stdio: ["ignore", "pipe", "ignore"],
+		timeout: GIT_DIGEST_TIMEOUT_MS,
+	});
+	const hash = createHash("sha256");
+	for (const rel of listing.split("\0").filter(Boolean).sort()) {
+		hash.update(rel);
+		hash.update("\0");
+		try {
+			hash.update(readFileSync(join(cwd, rel)));
+		} catch {
+			hash.update("<unreadable>");
+		}
+		hash.update("\0");
+	}
+	return hash.digest("hex");
+}
+
+/**
  * Content fingerprint of `cwd`'s working tree — `git status --porcelain` +
  * `git diff` concatenated with `hashArtifactsTree(cwd)`, then SHA-256 hashed.
  * Mirrors built-ins/goal-baseline.ts's `writeCommitBaseline` git posture
@@ -125,8 +156,17 @@ export function computeWorktreeDigest(cwd: string): string | undefined {
 			stdio: ["ignore", "pipe", "ignore"],
 			timeout: GIT_DIGEST_TIMEOUT_MS,
 		});
+		const untracked = hashUntrackedFiles(cwd);
 		const artifacts = hashArtifactsTree(cwd);
-		return createHash("sha256").update(status).update("\0").update(diff).update("\0").update(artifacts).digest("hex");
+		return createHash("sha256")
+			.update(status)
+			.update("\0")
+			.update(diff)
+			.update("\0")
+			.update(untracked)
+			.update("\0")
+			.update(artifacts)
+			.digest("hex");
 	} catch {
 		return undefined;
 	}

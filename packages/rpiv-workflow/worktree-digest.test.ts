@@ -71,6 +71,26 @@ describe("computeWorktreeDigest — git components", () => {
 	});
 });
 
+describe("computeWorktreeDigest — untracked files (kata zdd9)", () => {
+	it("an edit to an UNTRACKED file's contents changes the digest", () => {
+		writeFileSync(join(tmp, "new.py"), "broken\n");
+		const before = computeWorktreeDigest(tmp);
+		// Same porcelain line (`?? new.py`), empty `diff HEAD` — only contents differ.
+		writeFileSync(join(tmp, "new.py"), "fixed\n");
+		expect(computeWorktreeDigest(tmp)).not.toBe(before);
+	});
+
+	it("an untracked-but-gitignored file stays out of the digest", () => {
+		writeFileSync(join(tmp, ".gitignore"), ".rpiv/\nscratch.log\n");
+		git(tmp, "add", ".gitignore");
+		git(tmp, "commit", "-m", "ignore scratch");
+		writeFileSync(join(tmp, "scratch.log"), "a\n");
+		const before = computeWorktreeDigest(tmp);
+		writeFileSync(join(tmp, "scratch.log"), "b\n");
+		expect(computeWorktreeDigest(tmp)).toBe(before);
+	});
+});
+
 describe("computeWorktreeDigest — artifacts tree", () => {
 	it("a gitignored artifact write changes the digest", () => {
 		const before = computeWorktreeDigest(tmp);
