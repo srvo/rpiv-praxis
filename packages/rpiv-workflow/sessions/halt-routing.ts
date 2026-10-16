@@ -54,9 +54,12 @@ type HaltReason =
  *   - `toolUse`    — the transcript ENDS on a tool request: an agentic loop
  *                    truncated mid-flight, the signature of a killed child
  *                    process (the OOM killer's favourite).
- * `length` is deliberately absent: the model consumed its output budget — a
- * genuine model-behavior outcome an identical retry would likely reproduce, so
- * it stays a collected (semantic) failure for the downstream floors to judge.
+ * `length` is deliberately absent here: the model consumed its output budget, and
+ * an IDENTICAL retry would likely reproduce the cap — so a turn that hits the cap
+ * (again) stays a collected (semantic) failure for the downstream floors to judge.
+ * It reaches this set through no other path, though: `postStage` handles a first
+ * cap itself with ONE in-session continuation (kata kg4h), so only a turn that
+ * overruns AGAIN after being told to continue lands on this arm.
  * `aborted` never reaches the stop arm (`classifyAndHandleAbort` owns it and
  * throws `WorkflowAbortError` — no row, slot unfilled, resume re-dispatches).
  */

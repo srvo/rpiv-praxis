@@ -25,14 +25,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StageDef } from "../api.ts";
-import { LifecycleDispatcher } from "../events.ts";
-import { WorkflowAbortError } from "../internal-utils.ts";
-import type { Output } from "../output.ts";
-import { DEFAULT_TRIGGER } from "../triggers.ts";
-import type { RunState, StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.ts";
-import { bashStrikesRemaining } from "./bash-strikes.ts";
-import { classifyAndHandleAbort } from "./sessions.ts";
+import type { StageDef } from "../api.js";
+import { LifecycleDispatcher } from "../events.js";
+import { WorkflowAbortError } from "../internal-utils.js";
+import type { Output } from "../output.js";
+import { DEFAULT_TRIGGER } from "../triggers.js";
+import type { RunState, StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
+import { bashStrikesRemaining } from "./bash-strikes.js";
+import { classifyAndHandleAbort, postStage } from "./sessions.js";
 
 // ---------------------------------------------------------------------------
 // Fixtures — the minimal slice of sessions.test.ts's wiring the classifier needs
@@ -306,5 +306,68 @@ describe("sessions — abort classifier (direct)", () => {
 		expect(state.termination.error).toContain("per-command timeout");
 		expect(chain.sentMessages.some((m) => m.includes("HUNG, not merely slow"))).toBe(false);
 		expect(onSuccess).not.toHaveBeenCalled();
+	});
+});
+
+describe("sessions — output-cap continuation (kata kg4h)", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "rpiv-sessions-length-"));
+	});
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("continues a turn cut off at the output cap once, then halts if it overruns again", async () => {
+		// Run bb57: `plan/synthesize` overran the model's output cap and the run died.
+		// The mock branch does NOT grow on resend, so the continued turn reads the
+		// same `length` stop: the FIRST cap is steered, the SECOND takes the halt
+		// gate — which is what bounds the continuation (an unbounded one would hang).
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [{ branch: [mockAssistantMessage("…half of the merged plan…", "length")] }],
+		});
+		const child = await captureChild(chain);
+		const state = freshRunState();
+		const onFailure = vi.fn();
+		const onSuccess = vi.fn<(ctx: WorkflowHostContext, output: Output) => Promise<void>>(async () => {});
+		const s = stageSession({ cwd: tmpDir, state, onSuccess, onFailure });
+
+		await postStage(chain.ctx as WorkflowHostContext, child, s, undefined);
+
+		// Exactly one continuation went in, naming the cap and asking for the rest
+		// in parts so the retry does not overrun the same cap.
+		const continuation = chain.sentMessages.filter((m) => /output-length cap/.test(m));
+		expect(continuation).toHaveLength(1);
+		expect(continuation[0]).toMatch(/write it in parts/);
+		// The second cap is terminal (the semantic failure the halt gate judges).
+		expect(onSuccess).not.toHaveBeenCalled();
+		expect(onFailure).toHaveBeenCalledTimes(1);
+		expect(state.termination.error).toContain("truncated");
+	});
+
+	it("records a success when the continued turn finishes cleanly", async () => {
+		// The fix's happy path: the stage does not die, it finishes after one nudge.
+		const chain = createMockSessionChain({
+			cwd: tmpDir,
+			steps: [
+				{
+					branch: [mockAssistantMessage("first half of the artifact", "length")],
+					onSend: [{ branch: [mockAssistantMessage("second half; done")] }],
+				},
+			],
+		});
+		const child = await captureChild(chain);
+		const state = freshRunState();
+		const onFailure = vi.fn();
+		const onSuccess = vi.fn<(ctx: WorkflowHostContext, output: Output) => Promise<void>>(async () => {});
+		const s = stageSession({ cwd: tmpDir, state, onSuccess, onFailure });
+
+		await postStage(chain.ctx as WorkflowHostContext, child, s, undefined);
+
+		expect(chain.sentMessages.some((m) => /output-length cap/.test(m))).toBe(true);
+		expect(onSuccess).toHaveBeenCalledTimes(1);
+		expect(onFailure).not.toHaveBeenCalled();
 	});
 });

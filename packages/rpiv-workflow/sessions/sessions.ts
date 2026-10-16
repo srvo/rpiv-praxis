@@ -117,6 +117,17 @@ export async function postStage(
 	// surfaces as "error"/"toolUse", not "aborted" — so the stop/halt arms below
 	// only ever see turns with no live watchdog verdict.
 	if ((await classifyAndHandleAbort(observerCtx, child, s, outcome, session, offset)) === "continue") return;
+	// A turn cut off at the model's output-length cap was NOT judged bad — it was
+	// interrupted mid-reply, so its text is incomplete and any tool call it was
+	// mid-way through never landed. Steer it ONCE to continue where it stopped
+	// (kata kg4h); only a turn that hits the cap AGAIN after being told to
+	// continue is the genuine `length` outcome the halt gate below judges.
+	if (outcome.stop === "length") {
+		if (lengthContinued.has(s)) return haltStageOrSoftHalt(observerCtx, s, { kind: "stop", stop: "length" }, session);
+		lengthContinued.add(s);
+		await resendIntoChild(child, MSG_LENGTH_CONTINUE);
+		return postStage(observerCtx, child, s, offset);
+	}
 	// Every halt below routes through the single `haltStageOrSoftHalt` gate: a
 	// fanout unit marked `collectAll` records a NON-terminal failed row + a sentinel
 	// slot instead of halting the run — EXCEPT an infra-death stop (error/noResponse/
@@ -158,6 +169,24 @@ export async function postStage(
 	// observerCtx so the next stage's child is spawned off the launcher.
 	await s.onSuccess(observerCtx, result.output);
 }
+
+// ===========================================================================
+// OUTPUT-CAP CONTINUATION — one in-session nudge per activation (kata kg4h)
+// ===========================================================================
+
+/** Activations that already spent their one output-cap continuation. Keyed off
+ *  session identity (the `markupLeakRetried` / `bash-strikes.ts` posture) so
+ *  `StageSessionContext` stays free of mutable accounting. */
+const lengthContinued = new WeakSet<StageSessionContext>();
+
+/** Model-facing steering resent into the child after it hit the output cap.
+ *  Names the failure, forbids repeating the prefix, and — the point of the
+ *  ticket — tells the model to write a long artifact in PARTS so the retry does
+ *  not simply hit the same cap. */
+const MSG_LENGTH_CONTINUE =
+	"Your previous reply was cut off by the model's output-length cap, so it is incomplete and any action it was mid-way through did not complete. " +
+	"Continue the task from exactly where you were cut off — do not repeat what you already wrote. " +
+	"If the rest is another large artifact (a long document, a full file), write it in parts across several turns so the whole thing fits.";
 
 // ===========================================================================
 // MARKUP-LEAK RETRY — one in-session retry per activation (kata mykj)
