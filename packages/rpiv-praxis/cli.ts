@@ -136,6 +136,43 @@ async function defaultDeps(): Promise<ClaudeHostDeps> {
 	return { query: sdk.query, forkSession: sdk.forkSession };
 }
 
+/** Exit codes a stop signal ends the process with (128 + signal number). */
+const SIGNAL_EXIT = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 } as const;
+
+/**
+ * The first SIGINT, SIGTERM or SIGHUP asks the run to stop resumably (it then
+ * ends through the normal path and writes its terminal row). A second one
+ * exits now with 128 + the signal number; `process.exit` still fires `exit`,
+ * so the ledger's exit handler writes the terminal row. Without a listener,
+ * Node dies on these signals without emitting `exit` at all (kata grt7).
+ */
+export function handleStopSignals(
+	controller: AbortController,
+	proc: { on(event: string, fn: () => void): unknown; exit(code: number): void } = process,
+): void {
+	for (const [sig, code] of Object.entries(SIGNAL_EXIT)) {
+		proc.on(sig, () => {
+			if (controller.signal.aborted) proc.exit(code);
+			else controller.abort();
+		});
+	}
+}
+
+/** True when `code` is the exit a stop signal produces. */
+const isSignalExit = (code: number): boolean => Object.values(SIGNAL_EXIT).some((c) => c === code);
+
+/** Why a process exit code ended a run that never returned. */
+function exitReason(code: number): string {
+	const sig = Object.entries(SIGNAL_EXIT).find(([, c]) => c === code)?.[0];
+	return `process exited (code ${code}${sig ? `, ${sig}` : ""}) before the run returned`;
+}
+
+/** Register a process `exit` listener; returns its removal. */
+const onProcessExit = (fn: (code: number) => void): (() => void) => {
+	process.on("exit", fn);
+	return () => process.off("exit", fn);
+};
+
 function report(result: RunWorkflowResult, io: CliIo): number {
 	const where = result.runId ? ` (run ${result.runId})` : "";
 	if (result.success) {
@@ -158,6 +195,8 @@ export async function main(
 		/** Builds the kata client when `kata` is not injected (tests). */
 		detectKata?: typeof detectKata;
 		metricsFile?: string;
+		/** Registers the process `exit` listener that writes a terminal row for a run that never returns (tests). */
+		onExit?: (fn: (code: number) => void) => () => void;
 	} = {},
 ): Promise<number> {
 	let parsed: ReturnType<
@@ -366,6 +405,10 @@ export async function main(
 	};
 	const priorRunId = command === "run" || command === "step" ? undefined : resolveRunId(cwd, resumeRef!);
 	const ledger = new RunLedger(cwd, priorRunId ? "resumed" : "run", priorRunId);
+	// Every invocation ends with a terminal row, even one that never returns (kata grt7).
+	const offExit = (inject.onExit ?? onProcessExit)((code) =>
+		ledger.terminal(isSignalExit(code) ? "aborted" : "failed", exitReason(code), code),
+	);
 	// --timeout counts the wall-clock earlier invocations of this run already used.
 	const timer =
 		timeoutMin === undefined
@@ -439,15 +482,22 @@ export async function main(
 		// its escalation ladder climbs from it (the engine must see it to do either).
 		...(values.model ? { resolveModel: () => ({ model: values.model as string }) } : {}),
 	};
-	const result =
-		command === "run" || command === "step"
-			? await api.runWorkflowByName(
-					host,
-					command === "step" ? stepWorkflowName(target!) : target!,
-					rest.join(" "),
-					opts,
-				)
-			: await api.resumeWorkflowByRunId(host, resumeRef!, opts);
+	let result: RunWorkflowResult;
+	try {
+		result =
+			command === "run" || command === "step"
+				? await api.runWorkflowByName(
+						host,
+						command === "step" ? stepWorkflowName(target!) : target!,
+						rest.join(" "),
+						opts,
+					)
+				: await api.resumeWorkflowByRunId(host, resumeRef!, opts);
+	} catch (err) {
+		ledger.terminal("failed", `rpiv-wf threw: ${err instanceof Error ? err.message : String(err)}`, EXIT.failed);
+		offExit();
+		throw err;
+	}
 	if (timer) clearTimeout(timer);
 	ledger.end();
 	const parked = runParking.parked();
@@ -456,15 +506,25 @@ export async function main(
 		for (const p of parked) io.out(formatPark(p));
 		io.out(`parked: answer with \`rpiv-wf answer ${parked[0]!.runId} ${parked[0]!.n} <choice>\``);
 		code = EXIT.parked;
+		ledger.terminal(
+			"parked",
+			parked.map((p) => `${p.stage ?? "stage"}: ${p.questions[0]?.question ?? "a question"}`).join("; "),
+			code,
+		);
 	} else if (limit && !(limit === "budget" && result.success)) {
 		io.err(`stopped (${limit})${result.runId ? ` — run ${result.runId}` : ""}`);
 		code = limit === "budget" ? EXIT.budget : EXIT.timeout;
+		ledger.terminal("aborted", `stopped at the ${limit} limit`, code);
 	} else if (inject.signal?.aborted) {
 		io.err("interrupted");
 		code = EXIT.interrupted;
+		ledger.terminal("aborted", "interrupted by a stop signal", code);
 	} else {
 		code = report(result, io);
+		if (result.success) ledger.terminal("completed", `${result.stagesCompleted} stage(s)`, code);
+		else ledger.terminal("failed", result.error ?? "unknown error", code);
 	}
+	offExit();
 	writeMetrics(inject.metricsFile ?? process.env.RPIV_WF_METRICS_FILE, {
 		exitCode: code,
 		runId: result.runId ?? parked[0]?.runId ?? null,

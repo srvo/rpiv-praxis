@@ -17,8 +17,8 @@ const exitFile = process.env.RPIV_WF_EXIT_FILE;
 if (exitFile) process.on("exit", (code) => writeFileSync(exitFile, `${code}\n`));
 
 const jiti = createJiti(import.meta.url);
-const { main } = await jiti.import("../cli.ts");
+const { main, handleStopSignals } = await jiti.import("../cli.ts");
 const controller = new AbortController();
-process.once("SIGINT", () => controller.abort());
-process.once("SIGTERM", () => controller.abort());
+// First SIGINT/SIGTERM/SIGHUP stops the run resumably; a second exits at once (still writing its terminal row).
+handleStopSignals(controller);
 process.exitCode = await main(process.argv.slice(2), undefined, { signal: controller.signal });

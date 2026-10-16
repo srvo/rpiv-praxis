@@ -6,6 +6,13 @@
  *    inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens,
  *    models, toolCalls, costUsd?}                         one per stage turn
  *   {"type":"invocation", ts, invocation, kind: "run" | "resumed" | "end"}
+ *   {"type":"terminal", ts, invocation, outcome, reason, exitCode?}
+ *                                                      exactly one per invocation
+ *
+ * The terminal row is how a reader tells a run that ended from one that died
+ * silently: `completed`, `failed`, `parked` or `aborted`, with the reason. The
+ * CLI writes it when the run returns, and from a process `exit` handler when it
+ * does not (a crash, a forced exit, a repeated stop signal).
  *
  * Tokens are always recorded. `costUsd` is recorded only when the SDK reported
  * a cost for the turn: a turn routed through a gateway reports none, and the
@@ -47,6 +54,17 @@ export interface InvocationRow {
 	kind: "run" | "resumed" | "end";
 }
 
+export type TerminalOutcome = "completed" | "failed" | "parked" | "aborted";
+
+export interface TerminalRow {
+	type: "terminal";
+	ts: string;
+	invocation: string;
+	outcome: TerminalOutcome;
+	reason: string;
+	exitCode?: number;
+}
+
 /** What a run has spent so far, folded from its ledger rows. */
 export interface LedgerTotals {
 	costUsd: number;
@@ -68,7 +86,11 @@ export interface AuditRow {
 	[k: string]: unknown;
 }
 
-export function appendLedgerRow(cwd: string, runId: string, row: UsageRow | InvocationRow | AuditRow): void {
+export function appendLedgerRow(
+	cwd: string,
+	runId: string,
+	row: UsageRow | InvocationRow | TerminalRow | AuditRow,
+): void {
 	try {
 		mkdirSync(join(cwd, ".rpiv", "workflows", "runs"), { recursive: true });
 		appendFileSync(runFile(cwd, runId), `${JSON.stringify(row)}\n`, "utf-8");
@@ -186,6 +208,7 @@ export class RunLedger {
 	readonly totals = emptyLedgerTotals();
 	private runId: string | undefined;
 	private readonly buffer: UsageRow[] = [];
+	private terminated = false;
 
 	constructor(
 		private readonly cwd: string,
@@ -225,6 +248,25 @@ export class RunLedger {
 	/** Close this invocation's wall-clock span. */
 	end(): void {
 		if (this.runId) appendLedgerRow(this.cwd, this.runId, this.invocationRow("end"));
+	}
+
+	/**
+	 * Write this invocation's terminal row. The first call wins (the exit handler
+	 * fires after a normal end too); before the run id is known there is no run
+	 * file to write to, so nothing is written. Synchronous, so it is safe in a
+	 * process `exit` handler.
+	 */
+	terminal(outcome: TerminalOutcome, reason: string, exitCode?: number): void {
+		if (this.terminated || !this.runId) return;
+		this.terminated = true;
+		appendLedgerRow(this.cwd, this.runId, {
+			type: "terminal",
+			ts: new Date().toISOString(),
+			invocation: this.invocation,
+			outcome,
+			reason,
+			...(exitCode !== undefined ? { exitCode } : {}),
+		});
 	}
 
 	readonly lifecycle: LifecycleListeners = {

@@ -106,7 +106,9 @@ evals that survive a crash. What to set:
   (the callback still sees `AskUserQuestion`, which is all parking needs).
 - **Caps.** Every stage turn appends a `usage` row (tokens always; cost only
   when the SDK reports one, never an invented price) to the run's JSONL, and
-  each invocation appends an `invocation` row (`run`, `resumed`, `end`). So
+  each invocation appends an `invocation` row (`run`, `resumed`, `end`) and
+  exactly one `terminal` row (`completed`, `failed`, `parked` or `aborted`,
+  with the reason), written from an exit handler when the run never returns. So
   `--max-cost`, `--timeout` and the per-stage caps count what earlier
   invocations of the run spent. Through a gateway the SDK reports no cost;
   `--max-cost` then warns that it cannot be enforced, and the token caps are
