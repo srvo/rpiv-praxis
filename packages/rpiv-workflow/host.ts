@@ -207,6 +207,13 @@ export interface WorkflowSessionContext extends WorkflowHostContext {
 	toolTimeout?(): { reason: string } | undefined;
 
 	/**
+	 * True when the child stopped to wait for a person's answer (a parked
+	 * question). The runner then records the stop as a park, not an abort.
+	 * Optional: a host without parking omits it.
+	 */
+	parked?(): boolean;
+
+	/**
 	 * Recovery-side twin of `toolTimeout`: clears the recorded verdict so the runner can
 	 * re-arm the watchdog for the resumed turn's next bash call. Set by a watchdog-equipped
 	 * host (rpiv-pi) alongside `toolTimeout`. The strike-recovery branch consumes a strike

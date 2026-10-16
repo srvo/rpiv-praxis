@@ -82,6 +82,19 @@ export class WorkflowAbortError extends Error {
 export const isAbortError = (e: unknown): e is WorkflowAbortError => e instanceof WorkflowAbortError;
 
 /**
+ * An abort because the stage parked on a question for a person (the host's
+ * `parked()` said so). Still a `WorkflowAbortError`, so every fold and resume
+ * path treats it exactly like an abort; only the terminal row's wording
+ * differs: a park is a normal wait, not a failure.
+ */
+export class WorkflowParkedError extends WorkflowAbortError {
+	constructor() {
+		super("parked");
+		this.name = "WorkflowParkedError";
+	}
+}
+
+/**
  * Thrown on a programmer-error misconfiguration of a runtime primitive (e.g. a
  * `Semaphore` constructed with `limit < 1`). A named type — matching the
  * package convention (`WorkflowAbortError`, `StagePreflightError`) — so a

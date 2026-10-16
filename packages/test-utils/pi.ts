@@ -313,6 +313,11 @@ export interface MockSessionStep {
 	 */
 	toolTimeout?: { reason: string };
 	/**
+	 * When true, the child ctx's `parked()` reports true — a host that stopped
+	 * the stage to wait for a person. Pair with a `stopReason:"aborted"` branch.
+	 */
+	parked?: boolean;
+	/**
 	 * The on-disk session file this child's `getSessionFile()` reports. Used by
 	 * `sessionPolicy: "continue"` tests: a stage's recorded `SessionRef.file` must
 	 * point at a REAL file so `locateSessionFile` resolves it and the next
@@ -468,6 +473,7 @@ export function createMockSessionChain(opts: MockSessionChainOptions): MockSessi
 				step.toolTimeout,
 				step.onSend,
 			) as unknown as WorkflowSessionContext;
+			if (step.parked) (child as { parked?: () => boolean }).parked = () => true;
 			return options.withSession(child);
 		});
 

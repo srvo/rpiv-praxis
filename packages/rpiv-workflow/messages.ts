@@ -54,6 +54,12 @@ export const FAIL_WORKFLOW_ABORTED = (stage: string): FailureText => ({
 	error: `workflow aborted before stage "${stage}" (signal)`,
 });
 
+// A stage parked on a question for a person: a normal wait, resumed by answering it.
+export const FAIL_WORKFLOW_PARKED = (stage: string): FailureText => ({
+	toast: "rpiv: workflow parked — waiting for an answer",
+	error: `stage "${stage}" parked: waiting for a person's answer`,
+});
+
 export const FAIL_VALIDATION_EXHAUSTED = (skill: string, failures: string): FailureText => ({
 	toast: `rpiv: ${skill} output validation exhausted retries`,
 	error: `${skill} output validation failed after retries: ${failures}`,

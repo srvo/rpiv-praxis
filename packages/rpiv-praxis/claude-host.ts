@@ -73,6 +73,14 @@ export interface ClaudeHostOptions {
 	 * default: a checkpoint that completes with no person's answer fails.
 	 */
 	autoAcceptCheckpoints?: boolean;
+	/**
+	 * Answer a routine confirmation instead of parking it: a question set where
+	 * every question is single-select with exactly one (Recommended) option is
+	 * answered with those options and logged as a `confirmation-auto-accepted`
+	 * run-log row. Anything else is a decision and parks. Never applies to a
+	 * human-checkpoint stage. rpiv-wf turns it on (--park-confirmations turns it off).
+	 */
+	autoAcceptConfirmations?: boolean;
 	/** Effort for every stage unless the stage's own model selection sets thinking. */
 	effort?: Effort;
 	/** The built-in tools stages may use (default: Claude Code's full set). */
@@ -348,7 +356,7 @@ class ClaudeChildSession implements WorkflowSessionContext {
 	private sessionFile: string | undefined;
 	private readonly branch: BranchEntry[] = [];
 	private queue: Promise<void> = Promise.resolve();
-	private parked = false;
+	private isParked = false;
 	/** A person's answer reached this session (a resumed park): a checkpoint may complete. */
 	answered = false;
 
@@ -392,6 +400,11 @@ class ClaudeChildSession implements WorkflowSessionContext {
 
 	spawnChild<T>(options: SpawnOptions<T>): Promise<T> {
 		return this.parent.spawnChild(options);
+	}
+
+	/** The stage stopped to wait for a person: the runner words the stop as a park, not an abort. */
+	parked(): boolean {
+		return this.isParked;
 	}
 
 	/** Queue a turn; `waitForIdle` settles it. Never rejects: failures land in the branch as a stop reason. */
@@ -444,24 +457,24 @@ class ClaudeChildSession implements WorkflowSessionContext {
 				message: `${name} needs approval, and no one can grant it in an unattended rpiv-wf run (permission mode ${this.opts.permissionMode}).`,
 			};
 		}
-		if (this.checkpoint && this.opts.autoAcceptCheckpoints) {
+		const auto = this.checkpoint ? this.opts.autoAcceptCheckpoints : this.opts.autoAcceptConfirmations;
+		if (auto) {
 			const answers = recommendedAnswers(input.questions);
 			if (answers) {
-				this.answered = true;
+				if (this.checkpoint) this.answered = true;
 				this.opts.parking.record?.({
-					type: "checkpoint-auto-accepted",
+					type: this.checkpoint ? "checkpoint-auto-accepted" : "confirmation-auto-accepted",
 					...(this.stage !== undefined ? { stage: this.stage } : {}),
 					answers,
-					reason: "--auto-accept-checkpoints",
+					reason: this.checkpoint
+						? "--auto-accept-checkpoints"
+						: "routine confirmation: took the (Recommended) option",
 				});
-				this.ui.notify(
-					`checkpoint ${this.stage ?? "stage"} auto-accepted: ${Object.values(answers).join("; ")}`,
-					"warning",
-				);
+				this.ui.notify(`${this.stage ?? "stage"} auto-accepted: ${Object.values(answers).join("; ")}`, "warning");
 				return { behavior: "allow" as const, updatedInput: { ...input, answers } };
 			}
 		}
-		this.parked = true;
+		this.isParked = true;
 		this.opts.parking.park({
 			prompt: this.stagePrompt,
 			sessionId: this.sessionId,
@@ -522,15 +535,17 @@ class ClaudeChildSession implements WorkflowSessionContext {
 					});
 					const total = sessionUsageOf(msg);
 					this.parent.usageSeen.set(sid, total);
-					if (this.parked) this.opts.parking?.noteUsage?.(sid, total);
+					if (this.isParked) this.opts.parking?.noteUsage?.(sid, total);
 					stampStop(this.branch, stopReasonForResult(msg), start);
-					if (msg.subtype !== "success") this.ui.notify(`stage turn ended: ${msg.subtype}`, "warning");
+					// A parked turn ends error_during_execution by design: that is a wait, not a failure.
+					if (msg.subtype !== "success" && !this.isParked)
+						this.ui.notify(`stage turn ended: ${msg.subtype}`, "warning");
 				}
 			}
-			if (this.abort.signal.aborted || this.parked) stampStop(this.branch, "aborted", start);
+			if (this.abort.signal.aborted || this.isParked) stampStop(this.branch, "aborted", start);
 			else this.refuseUnansweredCheckpoint();
 		} catch (err) {
-			const aborted = this.abort.signal.aborted || this.parked;
+			const aborted = this.abort.signal.aborted || this.isParked;
 			if (!aborted) this.ui.notify(`Claude session error: ${String(err)}`, "error");
 			stampStop(this.branch, aborted ? "aborted" : "error", start);
 		}

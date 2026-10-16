@@ -75,6 +75,7 @@ options:
   --stage-max-cost <usd>     stop the run once any one stage has cost this much (exit 76)
   --stage-max-tokens <n>     stop the run once any one stage has used this many tokens (exit 76)
   --no-resume                answer: record the answer without resuming the run
+  --park-confirmations       park routine confirmations too (default: take their (Recommended) option, logged)
   --auto-accept-checkpoints  let human-checkpoint stages pass without a person (logged in the run log)
   --kata <ref>               file each parked question's ticket under this phase ticket
   --kata-labels <a,b>        labels for parked-question tickets (default rpiv-parked,human)
@@ -190,6 +191,7 @@ export async function main(
 				"dry-run": { type: "boolean" },
 				kata: { type: "string" },
 				"auto-accept-checkpoints": { type: "boolean" },
+				"park-confirmations": { type: "boolean" },
 				"kata-labels": { type: "string" },
 				help: { type: "boolean", short: "h" },
 			},
@@ -414,6 +416,7 @@ export async function main(
 			notify: (m, l = "info") => io.err(`[${l}] ${m}`),
 			parking: runParking.parking,
 			...(values["auto-accept-checkpoints"] === true ? { autoAcceptCheckpoints: true } : {}),
+			autoAcceptConfirmations: values["park-confirmations"] !== true,
 			...(values.effort ? { effort: values.effort as Effort } : {}),
 			...(values.tools !== undefined ? { tools: listFlag(values.tools) } : {}),
 			...(values["disallowed-tools"] !== undefined ? { disallowedTools: listFlag(values["disallowed-tools"]) } : {}),

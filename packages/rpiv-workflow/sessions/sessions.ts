@@ -23,7 +23,7 @@
  *                          exported below instead of duplicating them.
  */
 
-import { WorkflowAbortError } from "../internal-utils.js";
+import { WorkflowAbortError, WorkflowParkedError } from "../internal-utils.js";
 import type { SessionRef } from "../state/index.js";
 import {
 	type BranchEntry,
@@ -247,7 +247,8 @@ export async function classifyAndHandleAbort(
 	}
 	// Level 4 — an aborted stop with the signal cold and no watchdog is a genuine abort
 	// (e.g. ESC): throw so no row lands and resume re-dispatches the unit cleanly.
-	if (isAbortedStop(outcome)) throw new WorkflowAbortError();
+	// A parked question is the same stop, worded as a wait rather than an abort.
+	if (isAbortedStop(outcome)) throw child.parked?.() ? new WorkflowParkedError() : new WorkflowAbortError();
 	// Level 5 — a non-clean, non-abort stop with no verdict: the caller's stop arm owns it.
 }
 

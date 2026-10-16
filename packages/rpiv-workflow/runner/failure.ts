@@ -12,11 +12,11 @@ import {
 	notifyPartialArtifacts,
 	recordFatalFailure,
 	terminate,
-} from "../audit.ts";
-import { formatError, isAbortError } from "../internal-utils.ts";
-import { FAIL_WORKFLOW_ABORTED, MSG_STAGE_THREW, MSG_WORKFLOW_COMPLETE } from "../messages.ts";
-import type { RunContext, UnitRef, WorkflowHostContext } from "../types.ts";
-import { StagePreflightError } from "./errors.ts";
+} from "../audit.js";
+import { formatError, isAbortError, WorkflowParkedError } from "../internal-utils.js";
+import { FAIL_WORKFLOW_ABORTED, FAIL_WORKFLOW_PARKED, MSG_STAGE_THREW, MSG_WORKFLOW_COMPLETE } from "../messages.js";
+import type { RunContext, UnitRef, WorkflowHostContext } from "../types.js";
+import { StagePreflightError } from "./errors.js";
 
 /**
  * Explicit result of one chain-walk step, threaded up through
@@ -126,6 +126,15 @@ export function recordAbortedAtSeam(
 }
 
 /**
+ * Record the `"aborted"` terminal row for a stage that parked on a question:
+ * same status (resume re-dispatches it, and the host hands it the answer), but
+ * worded as a wait, and with no "artifacts produced before failure" recap.
+ */
+export function recordParkedAtSeam(hostCtx: WorkflowHostContext, name: string, run: RunContext): Promise<ChainOutcome> {
+	return haltChain(hostCtx, run, name, name, abortedArgs(FAIL_WORKFLOW_PARKED(name)));
+}
+
+/**
  * THE stage-entry guard — the ONE classify-then-record policy both single-stage
  * entries share: pre-check the cooperative-abort signal, run `inner`, and on a
  * throw classify it (mid-stage `WorkflowAbortError` → envelope-safe abort;
@@ -150,6 +159,7 @@ export async function withStageEntryGuard(
 	try {
 		return await inner();
 	} catch (e) {
+		if (e instanceof WorkflowParkedError) return recordParkedAtSeam(hostCtx, name, run);
 		if (isAbortError(e)) return recordAbortedAtSeam(hostCtx, name, run);
 		return recordEntryThrow(hostCtx, name, run, e);
 	}

@@ -288,6 +288,24 @@ describe("rpiv-wf parked questions", () => {
 		}
 	});
 
+	it("routine confirmations are auto-accepted unless --park-confirmations (kata 439b)", async () => {
+		for (const [flag, want] of [
+			[[], true],
+			[["--park-confirmations"], false],
+		] as const) {
+			const h = harness();
+			await main(["run", "wf", ...flag, "--cwd", project(), "--plugin-dir", plugin()], io().io, {
+				api: h.api,
+				deps: { query: vi.fn(), forkSession: vi.fn() } as never,
+				kata: null,
+			});
+			const ctx = vi.mocked(h.api.runWorkflowByName).mock.calls[0]![0] as unknown as {
+				opts: { autoAcceptConfirmations?: boolean };
+			};
+			expect(ctx.opts.autoAcceptConfirmations).toBe(want);
+		}
+	});
+
 	it("--kata and --kata-labels configure the park tickets", async () => {
 		const detect = vi.fn(() => undefined);
 		const h = harness();

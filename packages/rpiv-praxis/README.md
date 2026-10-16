@@ -72,6 +72,7 @@ Without the global install, `rpiv-wf` is
 | `--timeout <minutes>` | none | stop once the run has run this long, across resumes |
 | `--stage-max-cost <usd>` | none | stop once any one stage has cost this much |
 | `--stage-max-tokens <n>` | none | stop once any one stage has used this many tokens |
+| `--park-confirmations` | off | park routine confirmations too, instead of taking their (Recommended) option |
 | `--auto-accept-checkpoints` | off | let human-checkpoint stages (build's `design-review`) pass without a person; logged in the run log |
 | `--kata <ref>` | none | file parked-question tickets under this phase ticket |
 | `--kata-labels <a,b>` | `rpiv-parked,human` | labels for parked-question tickets (`none` = no labels) |
@@ -198,6 +199,13 @@ and receives the answer, so the work it did before asking is kept.
 
 Run in passes: start or resume several runs, let each go until it finishes or
 parks, then work through the inbox.
+
+A routine confirmation does not park: when every question is single-select
+with exactly one (Recommended) option (for example "Write the research doc?
+Write it (Recommended) / Keep scanning"), rpiv-wf answers with those options
+and records a `confirmation-auto-accepted` row in the run log. Anything else
+is a decision and parks. `--park-confirmations` parks them all. A parked
+stage is reported as parked, not as an aborted or failed run.
 
 A stage marked `checkpoint: true` (build's `design-review`) is a human
 checkpoint: its questions always park, and a checkpoint that completes

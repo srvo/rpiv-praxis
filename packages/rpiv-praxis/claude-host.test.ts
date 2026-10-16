@@ -10,6 +10,7 @@ import {
 	claudeModel,
 	PARKED_MESSAGE,
 	type Parking,
+	recommendedAnswers,
 } from "./claude-host.js";
 
 type Call = { prompt: string; options: Record<string, any> };
@@ -482,7 +483,10 @@ describe("ClaudeWorkflowHost — human checkpoints (kata ac4x)", () => {
 	it("a checkpoint's question always parks, even when it carries a (Recommended) option", async () => {
 		const parking = stub();
 		const sdk = asking();
-		await run(host(sdk.deps, { parking }).h, { stage: "design-review", checkpoint: true });
+		await run(host(sdk.deps, { parking, autoAcceptConfirmations: true }).h, {
+			stage: "design-review",
+			checkpoint: true,
+		});
 		expect(parking.park).toHaveBeenCalledOnce();
 		expect(sdk.calls[0]!.options.verdict).toMatchObject({ behavior: "deny", interrupt: true });
 	});
@@ -513,5 +517,81 @@ describe("ClaudeWorkflowHost — human checkpoints (kata ac4x)", () => {
 		});
 		expect(lastAssistant(branch).stopReason).toBe("stop");
 		expect(parking.record).toHaveBeenCalledWith(expect.objectContaining({ type: "checkpoint-auto-accepted" }));
+	});
+});
+
+describe("ClaudeWorkflowHost — routine confirmations (kata 439b)", () => {
+	const q = (question: string, labels: string[], multiSelect = false) => ({
+		question,
+		options: labels.map((label) => ({ label })),
+		...(multiSelect ? { multiSelect } : {}),
+	});
+	const stub = () =>
+		({ park: vi.fn(), answerFor: vi.fn(() => undefined), record: vi.fn() }) as Parking & {
+			park: ReturnType<typeof vi.fn>;
+			record: ReturnType<typeof vi.fn>;
+		};
+	const asking = (questions: unknown[]) =>
+		fakeSdk([
+			(call) =>
+				(async function* () {
+					yield init("s1");
+					call.options.verdict = await call.options.canUseTool(
+						"AskUserQuestion",
+						{ questions },
+						{ signal: new AbortController().signal },
+					);
+					yield result("s1", call.options.verdict.behavior === "deny" ? "error_during_execution" : "success");
+				})(),
+		]);
+	const writeIt = q("Scan complete. Write the research doc?", ["Write it (Recommended)", "Keep scanning"]);
+
+	it("classifies: one (Recommended) option per single-select question is a confirmation", () => {
+		expect(recommendedAnswers([writeIt])).toEqual({
+			"Scan complete. Write the research doc?": "Write it (Recommended)",
+		});
+		expect(recommendedAnswers([q("Which store?", ["Postgres", "SQLite"])])).toBeUndefined();
+		expect(recommendedAnswers([q("Pick", ["A (Recommended)", "B (Recommended)"])])).toBeUndefined();
+		expect(recommendedAnswers([q("Pick", ["A (Recommended)", "B"], true)])).toBeUndefined();
+		expect(recommendedAnswers([writeIt, q("Which store?", ["Postgres", "SQLite"])])).toBeUndefined();
+		expect(recommendedAnswers([])).toBeUndefined();
+	});
+
+	it("auto-accepts a confirmation with its recommendation and logs it, instead of parking", async () => {
+		const parking = stub();
+		const sdk = asking([writeIt]);
+		const { branch, child } = await run(host(sdk.deps, { parking, autoAcceptConfirmations: true }).h, {
+			stage: "research",
+		});
+		expect(parking.park).not.toHaveBeenCalled();
+		expect(sdk.calls[0]!.options.verdict).toEqual({
+			behavior: "allow",
+			updatedInput: { questions: [writeIt], answers: { [writeIt.question]: "Write it (Recommended)" } },
+		});
+		expect(parking.record).toHaveBeenCalledWith(
+			expect.objectContaining({ type: "confirmation-auto-accepted", stage: "research" }),
+		);
+		expect(lastAssistant(branch).stopReason).toBe("stop");
+		expect((child as unknown as { parked(): boolean }).parked()).toBe(false);
+	});
+
+	it("parks a decision, and parks a confirmation when auto-accept is off", async () => {
+		for (const [questions, auto] of [
+			[[q("Which store?", ["Postgres", "SQLite"])], true],
+			[[writeIt], false],
+		] as const) {
+			const parking = stub();
+			await run(host(asking([...questions]).deps, { parking, autoAcceptConfirmations: auto }).h, { stage: "s" });
+			expect(parking.park).toHaveBeenCalledOnce();
+			expect(parking.record).not.toHaveBeenCalled();
+		}
+	});
+
+	it("a park is reported as parked, without the error_during_execution warning", async () => {
+		const parking = stub();
+		const { h, notes } = host(asking([q("Which store?", ["Postgres", "SQLite"])]).deps, { parking });
+		const { child } = await run(h, { stage: "s" });
+		expect((child as unknown as { parked(): boolean }).parked()).toBe(true);
+		expect(notes.join("\n")).not.toContain("error_during_execution");
 	});
 });
