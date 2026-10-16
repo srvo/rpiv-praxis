@@ -73,10 +73,16 @@ describe("kata tickets", () => {
 		expect(labelsOf(c.calls[0]!.args)).toEqual([]);
 	});
 
-	it("closes the ticket with the answer", () => {
+	it("closes the ticket with the answer, typed evidence and a message kata 0.18 accepts (kata raw9)", () => {
 		const { calls, exec } = recorder();
-		detectKata(() => {}, exec, { PATH: binDir() })!.close({ ...park, kata: "ab12", answer: "Accept" });
-		expect(calls[0]!.args).toEqual(["close", "ab12", "--done", "--message", "Answered via rpiv-wf: Accept"]);
+		detectKata(() => {}, exec, { PATH: binDir() })!.close({ ...park, kata: "ab12", answer: "Red" });
+		const args = calls[0]!.args;
+		expect(args.slice(0, 3)).toEqual(["close", "ab12", "--done"]);
+		expect(args[args.indexOf("--evidence") + 1]).toBe("external:rpiv-wf:r1#1");
+		const message = args[args.indexOf("--message") + 1]!;
+		expect(message).toContain("Red");
+		// kata 0.18: "message too short for reason=done (need >=40 chars)".
+		expect(message.length).toBeGreaterThanOrEqual(40);
 	});
 
 	it("never throws: failures are warnings and parking carries on", () => {

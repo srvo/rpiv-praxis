@@ -118,7 +118,17 @@ export function detectKata(
 		close(park) {
 			if (!park.kata) return;
 			try {
-				exec("kata", ["close", park.kata, "--done", "--message", `Answered via rpiv-wf: ${park.answer ?? ""}`]);
+				// kata 0.18 refuses `--done` without typed evidence and with a message
+				// under 40 characters; the run/question pair is the evidence.
+				exec("kata", [
+					"close",
+					park.kata,
+					"--done",
+					"--message",
+					`Answered via rpiv-wf (run ${park.runId}, question #${park.n}): ${park.answer ?? "(no answer text)"}`,
+					"--evidence",
+					`external:rpiv-wf:${park.runId}#${park.n}`,
+				]);
 			} catch (err) {
 				warn(`kata close ${park.kata} failed: ${String(err)}`);
 			}
