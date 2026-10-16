@@ -137,6 +137,15 @@ describe("haltWhenAllFailed wiring (flagged fanout inventory)", () => {
 	});
 });
 
+it("design-review is build's one human checkpoint, and the only checkpoint (kata ac4x)", () => {
+	const checkpoints = builtInWorkflows.flatMap((wf) =>
+		Object.entries(wf.stages)
+			.filter(([, def]) => (def as { checkpoint?: boolean }).checkpoint === true)
+			.map(([name]) => `${wf.name}.${name}`),
+	);
+	expect(checkpoints).toEqual(["build.design-review"]);
+});
+
 it("build is the default workflow (builtInWorkflows[0].name === 'build')", () => {
 	// Position 0 is load-bearing: resolve-default.ts picks
 	// `Map.keys().next().value` when no project/user config sets a default, so

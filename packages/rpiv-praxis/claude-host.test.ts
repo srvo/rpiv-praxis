@@ -434,3 +434,84 @@ describe("ClaudeWorkflowHost — usage is per turn, not cumulative", () => {
 		expect(seen[1]).toBeCloseTo(0.01);
 	});
 });
+
+describe("ClaudeWorkflowHost — human checkpoints (kata ac4x)", () => {
+	const confirm = {
+		questions: [
+			{ question: "Accept the design?", options: [{ label: "Accept (Recommended)" }, { label: "Adjust a slice" }] },
+		],
+	};
+	const stub = (over: Partial<Parking> = {}) =>
+		({ park: vi.fn(), answerFor: vi.fn(() => undefined), record: vi.fn(), ...over }) as Parking & {
+			park: ReturnType<typeof vi.fn>;
+			record: ReturnType<typeof vi.fn>;
+		};
+	const asking = () =>
+		fakeSdk([
+			(call) =>
+				(async function* () {
+					yield init("s1");
+					call.options.verdict = await call.options.canUseTool("AskUserQuestion", confirm, {
+						signal: new AbortController().signal,
+					});
+					yield result("s1");
+				})(),
+		]);
+	const silent = () => fakeSdk([() => [init("s1"), say("s1", "design accepted: 3 slices"), result("s1")]]);
+
+	it("a checkpoint that completes without asking fails the stage", async () => {
+		const { h, notes } = host(silent().deps, { parking: stub() });
+		const { branch } = await run(h, { stage: "design-review", checkpoint: true });
+		expect(lastAssistant(branch).stopReason).toBe("error");
+		expect(notes.join("\n")).toMatch(/human checkpoint design-review completed without a person's answer/);
+	});
+
+	it("an ordinary stage that completes without asking is fine", async () => {
+		const { branch } = await run(host(silent().deps, { parking: stub() }).h, { stage: "plan" });
+		expect(lastAssistant(branch).stopReason).toBe("stop");
+	});
+
+	it("a checkpoint resumed with a person's answer may complete", async () => {
+		const delivered = vi.fn();
+		const parking = stub({ answerFor: vi.fn(() => ({ sessionId: "p1", message: "Answer: Accept", delivered })) });
+		const sdk = fakeSdk([() => [say("p1", "design accepted"), result("p1")]]);
+		const { branch } = await run(host(sdk.deps, { parking }).h, { stage: "design-review", checkpoint: true });
+		expect(lastAssistant(branch).stopReason).toBe("stop");
+	});
+
+	it("a checkpoint's question always parks, even when it carries a (Recommended) option", async () => {
+		const parking = stub();
+		const sdk = asking();
+		await run(host(sdk.deps, { parking }).h, { stage: "design-review", checkpoint: true });
+		expect(parking.park).toHaveBeenCalledOnce();
+		expect(sdk.calls[0]!.options.verdict).toMatchObject({ behavior: "deny", interrupt: true });
+	});
+
+	it("--auto-accept-checkpoints answers with the recommendation and logs it", async () => {
+		const parking = stub();
+		const sdk = asking();
+		const { branch } = await run(host(sdk.deps, { parking, autoAcceptCheckpoints: true }).h, {
+			stage: "design-review",
+			checkpoint: true,
+		});
+		expect(parking.park).not.toHaveBeenCalled();
+		expect(sdk.calls[0]!.options.verdict).toEqual({
+			behavior: "allow",
+			updatedInput: { ...confirm, answers: { "Accept the design?": "Accept (Recommended)" } },
+		});
+		expect(parking.record).toHaveBeenCalledWith(
+			expect.objectContaining({ type: "checkpoint-auto-accepted", stage: "design-review" }),
+		);
+		expect(lastAssistant(branch).stopReason).toBe("stop");
+	});
+
+	it("--auto-accept-checkpoints lets a silent checkpoint pass, and logs that too", async () => {
+		const parking = stub();
+		const { branch } = await run(host(silent().deps, { parking, autoAcceptCheckpoints: true }).h, {
+			stage: "design-review",
+			checkpoint: true,
+		});
+		expect(lastAssistant(branch).stopReason).toBe("stop");
+		expect(parking.record).toHaveBeenCalledWith(expect.objectContaining({ type: "checkpoint-auto-accepted" }));
+	});
+});

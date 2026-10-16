@@ -54,7 +54,10 @@ type OpenMode = { reattach: { sessionFile: string } } | { fork: { sessionFile: s
  */
 function openChild(
 	ctx: WorkflowHostContext,
-	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex"> & { stageName?: string },
+	s: Pick<StageSessionContext, "prompt" | "model" | "signal" | "laneUnitIndex"> & {
+		stageName?: string;
+		stage?: StageSessionContext["stage"];
+	},
 	body: (child: WorkflowSessionContext) => Promise<void>,
 	mode?: OpenMode,
 ): Promise<void> {
@@ -68,6 +71,7 @@ function openChild(
 		// showing the one live session. Inert on a non-lane host.
 		unitIndex: s.laneUnitIndex,
 		...(s.stageName !== undefined ? { stage: s.stageName } : {}),
+		...(s.stage && "checkpoint" in s.stage && s.stage.checkpoint === true ? { checkpoint: true } : {}),
 		...mode,
 		withSession: async (child) => {
 			await child.waitForIdle();

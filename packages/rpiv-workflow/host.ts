@@ -171,6 +171,11 @@ export interface WorkflowHostContext {
 		 * execution.
 		 */
 		stage?: string;
+		/**
+		 * The stage is a human checkpoint (`SkillStage.checkpoint`): its questions
+		 * must reach a person, and a host may refuse a completion no person answered.
+		 */
+		checkpoint?: boolean;
 		withSession: (child: WorkflowSessionContext) => Promise<T>;
 	}): Promise<T>;
 }

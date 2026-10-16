@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -37,6 +37,21 @@ describe("createRunParking", () => {
 		rp.lifecycle.onStageStart!({ kind: "skill", name: "design (s2)", stageNumber: 2, skill: "d" }, lifecycleCtx);
 		rp.parking.park({ prompt: "/skill:d", sessionId: "s1", questions: [ask], stage: "design (s1)" });
 		expect(readParks(cwd, "r1")[0]).toMatchObject({ stage: "design (s1)" });
+	});
+
+	it("record appends an audit row to the run log", () => {
+		const cwd = project();
+		const rp = createRunParking({ cwd, stop: vi.fn(), notify: () => {} });
+		rp.lifecycle.onWorkflowStart!(lifecycleCtx);
+		rp.parking.record!({ type: "checkpoint-auto-accepted", stage: "design-review", reason: "flag" });
+		const rows = readFileSync(join(runsDir(cwd), "r1.jsonl"), "utf-8")
+			.trim()
+			.split("\n")
+			.map((l) => JSON.parse(l));
+		expect(rows).toEqual([
+			expect.objectContaining({ type: "checkpoint-auto-accepted", stage: "design-review", reason: "flag" }),
+		]);
+		expect(typeof rows[0].ts).toBe("string");
 	});
 
 	it("still stops the run when it cannot park (no run id yet)", () => {

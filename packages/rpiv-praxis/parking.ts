@@ -10,6 +10,7 @@ import type { LifecycleListeners } from "@juicesharp/rpiv-workflow";
 import type { Parking } from "./claude-host.js";
 import type { Kata } from "./kata.js";
 import { addPark, answeredParkFor, answerMessage, type Park, type ParkedQuestion, updatePark } from "./park-store.js";
+import { appendLedgerRow } from "./run-ledger.js";
 
 export interface RunParking {
 	parking: Parking;
@@ -93,6 +94,11 @@ export function createRunParking(opts: {
 				},
 			};
 		},
+	};
+
+	parking.record = (row) => {
+		if (runId) appendLedgerRow(opts.cwd, runId, { ts: new Date().toISOString(), ...row });
+		opts.notify(`${row.type}${row.stage ? ` (${row.stage})` : ""}`);
 	};
 
 	parking.noteUsage = (sessionId, usage) => {

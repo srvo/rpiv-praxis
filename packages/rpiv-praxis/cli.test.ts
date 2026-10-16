@@ -270,6 +270,24 @@ describe("rpiv-wf parked questions", () => {
 		expect(signals.run?.aborted).toBe(false);
 	});
 
+	it("--auto-accept-checkpoints reaches the host; without it checkpoints need a person (kata ac4x)", async () => {
+		for (const [flag, want] of [
+			[["--auto-accept-checkpoints"], true],
+			[[], undefined],
+		] as const) {
+			const h = harness();
+			await main(["run", "wf", ...flag, "--cwd", project(), "--plugin-dir", plugin()], io().io, {
+				api: h.api,
+				deps: { query: vi.fn(), forkSession: vi.fn() } as never,
+				kata: null,
+			});
+			const ctx = vi.mocked(h.api.runWorkflowByName).mock.calls[0]![0] as unknown as {
+				opts: { autoAcceptCheckpoints?: boolean };
+			};
+			expect(ctx.opts.autoAcceptCheckpoints).toBe(want);
+		}
+	});
+
 	it("--kata and --kata-labels configure the park tickets", async () => {
 		const detect = vi.fn(() => undefined);
 		const h = harness();

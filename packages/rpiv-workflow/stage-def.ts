@@ -278,6 +278,12 @@ interface StageDefBase<TIn = unknown, TOut = unknown> {
  */
 export interface SkillStage<TIn = unknown, TOut = unknown> extends StageDefBase<TIn, TOut> {
 	skill?: string;
+	/**
+	 * A human checkpoint: the stage exists to get a person's answer. The host
+	 * is told (`spawnChild({ checkpoint: true })`) so it never auto-answers the
+	 * stage's questions and can refuse a completion no person answered.
+	 */
+	checkpoint?: boolean;
 	outcome?: Outcome;
 	/**
 	 * Opt-in unit loop. When set, the runner expands this stage into one Pi

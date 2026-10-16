@@ -286,6 +286,8 @@ const buildWorkflow = defineWorkflow({
 		// counterpart to the LLM gates — the one human pass on the parallel path.
 		"design-review": produces({
 			skill: "design-review",
+			// The one human checkpoint: rpiv-wf refuses a completion no person answered.
+			checkpoint: true,
 			outcome: rpivBucketOutcome("designs"),
 			reads: [fanin("designs"), "slices"],
 		}),

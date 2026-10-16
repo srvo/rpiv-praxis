@@ -61,7 +61,14 @@ export interface LedgerTotals {
 
 const runFile = (cwd: string, runId: string) => join(cwd, ".rpiv", "workflows", "runs", `${runId}.jsonl`);
 
-export function appendLedgerRow(cwd: string, runId: string, row: UsageRow | InvocationRow): void {
+/** An audit row rpiv-wf adds to the run log (no stageNumber, so the engine's readers skip it). */
+export interface AuditRow {
+	type: string;
+	ts: string;
+	[k: string]: unknown;
+}
+
+export function appendLedgerRow(cwd: string, runId: string, row: UsageRow | InvocationRow | AuditRow): void {
 	try {
 		mkdirSync(join(cwd, ".rpiv", "workflows", "runs"), { recursive: true });
 		appendFileSync(runFile(cwd, runId), `${JSON.stringify(row)}\n`, "utf-8");

@@ -66,6 +66,13 @@ export interface ClaudeHostOptions {
 	locate?: (sessionId: string) => string | undefined;
 	/** Park stages that ask a question instead of letting them guess (see Parking). */
 	parking?: Parking;
+	/**
+	 * Let a human-checkpoint stage (`checkpoint: true`) pass without a person:
+	 * its question is answered with its (Recommended) option, or a completion
+	 * without a question is accepted. Every such pass is a run-log row. Off by
+	 * default: a checkpoint that completes with no person's answer fails.
+	 */
+	autoAcceptCheckpoints?: boolean;
 	/** Effort for every stage unless the stage's own model selection sets thinking. */
 	effort?: Effort;
 	/** The built-in tools stages may use (default: Claude Code's full set). */
@@ -129,6 +136,30 @@ export interface Parking {
 		| undefined;
 	/** Record a parked session's cumulative usage once its interrupted turn reports it. */
 	noteUsage?(sessionId: string, usage: SessionUsage): void;
+	/** Append an audit row (an auto-accepted question or checkpoint) to the run log. */
+	record?(row: { type: string; stage?: string } & Record<string, unknown>): void;
+}
+
+/** The suffix that marks an AskUserQuestion option as the asker's recommendation. */
+const RECOMMENDED = /\(recommended\)\s*$/i;
+
+/**
+ * The answers a person would give by taking every question's recommendation:
+ * `{ question: label }` when each question is single-select with exactly one
+ * (Recommended) option, else undefined (the questions need a person).
+ */
+export function recommendedAnswers(questions: unknown): Record<string, string> | undefined {
+	if (!Array.isArray(questions) || questions.length === 0) return undefined;
+	const answers: Record<string, string> = {};
+	for (const q of questions as Array<{ question?: unknown; options?: unknown; multiSelect?: unknown }>) {
+		if (typeof q?.question !== "string" || q.multiSelect === true || !Array.isArray(q.options)) return undefined;
+		const picks = (q.options as Array<{ label?: unknown }>).filter(
+			(o) => typeof o?.label === "string" && RECOMMENDED.test(o.label),
+		);
+		if (picks.length !== 1) return undefined;
+		answers[q.question] = picks[0]!.label as string;
+	}
+	return answers;
 }
 
 /** What the model reads when its question is parked: stop, do not guess. */
@@ -267,6 +298,7 @@ export class ClaudeWorkflowHost implements WorkflowHostContext {
 			abort,
 			options.prompt,
 			options.stage,
+			options.checkpoint === true,
 		);
 		try {
 			if (options.reattach) {
@@ -287,6 +319,7 @@ export class ClaudeWorkflowHost implements WorkflowHostContext {
 					if (answered.usage) this.usageSeen.set(answered.sessionId, answered.usage);
 					const file = answered.sessionFile ?? this.locate(answered.sessionId);
 					child.adopt(answered.sessionId, file ?? "", file);
+					child.answered = true;
 					await child.sendUserMessage(answered.message);
 					answered.delivered();
 				} else {
@@ -316,6 +349,8 @@ class ClaudeChildSession implements WorkflowSessionContext {
 	private readonly branch: BranchEntry[] = [];
 	private queue: Promise<void> = Promise.resolve();
 	private parked = false;
+	/** A person's answer reached this session (a resumed park): a checkpoint may complete. */
+	answered = false;
 
 	constructor(
 		private readonly parent: ClaudeWorkflowHost,
@@ -327,6 +362,8 @@ class ClaudeChildSession implements WorkflowSessionContext {
 		private readonly stagePrompt: string,
 		/** The engine's stage name for this child (attribution for usage and parks). */
 		private readonly stage?: string,
+		/** A human checkpoint: never completes without a person's answer (unless opted out). */
+		private readonly checkpoint = false,
 	) {
 		this.cwd = parent.cwd;
 		this.maxConcurrency = parent.maxConcurrency;
@@ -407,6 +444,23 @@ class ClaudeChildSession implements WorkflowSessionContext {
 				message: `${name} needs approval, and no one can grant it in an unattended rpiv-wf run (permission mode ${this.opts.permissionMode}).`,
 			};
 		}
+		if (this.checkpoint && this.opts.autoAcceptCheckpoints) {
+			const answers = recommendedAnswers(input.questions);
+			if (answers) {
+				this.answered = true;
+				this.opts.parking.record?.({
+					type: "checkpoint-auto-accepted",
+					...(this.stage !== undefined ? { stage: this.stage } : {}),
+					answers,
+					reason: "--auto-accept-checkpoints",
+				});
+				this.ui.notify(
+					`checkpoint ${this.stage ?? "stage"} auto-accepted: ${Object.values(answers).join("; ")}`,
+					"warning",
+				);
+				return { behavior: "allow" as const, updatedInput: { ...input, answers } };
+			}
+		}
 		this.parked = true;
 		this.opts.parking.park({
 			prompt: this.stagePrompt,
@@ -416,6 +470,27 @@ class ClaudeChildSession implements WorkflowSessionContext {
 			...(this.stage !== undefined ? { stage: this.stage } : {}),
 		});
 		return { behavior: "deny" as const, message: PARKED_MESSAGE, interrupt: true };
+	}
+
+	/**
+	 * A checkpoint turn that ended without parking and without a person's answer
+	 * fails the stage: the human checkpoint did not happen. With
+	 * --auto-accept-checkpoints it passes instead, recorded in the run log.
+	 */
+	private refuseUnansweredCheckpoint(): void {
+		if (!this.checkpoint || !this.opts.parking || this.answered) return;
+		if (this.opts.autoAcceptCheckpoints) {
+			this.answered = true;
+			this.opts.parking.record?.({
+				type: "checkpoint-auto-accepted",
+				...(this.stage !== undefined ? { stage: this.stage } : {}),
+				reason: "--auto-accept-checkpoints; the stage completed without asking",
+			});
+			return;
+		}
+		const msg = `human checkpoint ${this.stage ?? "stage"} completed without a person's answer; it must ask (AskUserQuestion) or the run must pass --auto-accept-checkpoints`;
+		this.ui.notify(msg, "error");
+		this.branch.push(assistantEntry([{ type: "text", text: msg }], "error"));
 	}
 
 	private async turn(prompt: string): Promise<void> {
@@ -453,6 +528,7 @@ class ClaudeChildSession implements WorkflowSessionContext {
 				}
 			}
 			if (this.abort.signal.aborted || this.parked) stampStop(this.branch, "aborted", start);
+			else this.refuseUnansweredCheckpoint();
 		} catch (err) {
 			const aborted = this.abort.signal.aborted || this.parked;
 			if (!aborted) this.ui.notify(`Claude session error: ${String(err)}`, "error");
