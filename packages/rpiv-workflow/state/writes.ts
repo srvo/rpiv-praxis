@@ -13,9 +13,9 @@
  */
 
 import { appendFileSync, mkdirSync } from "node:fs";
-import { formatError } from "../internal-utils.ts";
-import { runsDir, stateFilePath } from "./paths.ts";
-import type { LoopCapRow, RoutingDecision, WorkflowHeader, WorkflowStage } from "./state.ts";
+import { formatError } from "../internal-utils.js";
+import { runsDir, stateFilePath } from "./paths.js";
+import type { LoopCapRow, ModelEscalationRow, RoutingDecision, WorkflowHeader, WorkflowStage } from "./state.js";
 
 /**
  * Shared append primitive: ensure the runs directory exists, then
@@ -71,5 +71,10 @@ export function appendRoutingDecision(cwd: string, runId: string, row: RoutingDe
  * gates the chain (the live soft-stop toast is the user-facing signal).
  */
 export function appendLoopCap(cwd: string, runId: string, row: LoopCapRow): boolean {
+	return tryAppendJsonl(cwd, runId, row);
+}
+
+/** Append a `model-escalation` telemetry row (see `ModelEscalationRow`). */
+export function appendModelEscalation(cwd: string, runId: string, row: ModelEscalationRow): boolean {
 	return tryAppendJsonl(cwd, runId, row);
 }

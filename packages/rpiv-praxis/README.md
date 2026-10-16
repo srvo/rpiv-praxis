@@ -59,7 +59,7 @@ Without the global install, `rpiv-wf` is
 | Flag | Default | |
 | --- | --- | --- |
 | `--name <name>` | workflow name | name the run; resume it by name |
-| `--model <id>` | Claude Code's | model for every stage (`haiku`, `sonnet`, `claude-opus-5-5`, …) |
+| `--model <id>` | Claude Code's | default model for every stage (`haiku`, `sonnet`, `claude-opus-5-5`, …); a pack's `models.stages` pin overrides it |
 | `--concurrency <n>` | `4` | parallel fan-out units |
 | `--permission-mode <mode>` | `auto` | Claude Code permission mode for each stage |
 | `--plugin-dir <dir>` | `rpiv-pi/hosts/claude` | the rpiv Claude plugin |
@@ -116,6 +116,14 @@ evals that survive a crash. What to set:
   Anthropic-compatible endpoint (a variant `env` of `ANTHROPIC_BASE_URL` and
   `ANTHROPIC_AUTH_TOKEN`, which Claude Code honours) should work but are
   **not verified** here; try one trial with `--max-cost` first.
+- **Per-stage models.** A pack sets them on the workflow:
+  `models: { stages: { plan: "haiku", synthesize: "opus" }, escalate: { ladder: ["haiku", "sonnet", "opus"] } }`.
+  With a ladder, a producer whose verify/assess verdict failed retries one
+  step up per failed round; each step is a `model-escalation` row in the run
+  log. A grade → fix back-edge (build's `plan-fix`, `code-fix`) escalates
+  through `escalate.revisits: ["plan-fix", "code-fix"]`: the first fix runs on
+  the stage's pin, each repeat lap one step up. Ids compare as exact strings,
+  so write pins and ladder the same way.
 - **Detach it.** `tmux`, or `nohup rpiv-wf … > night.log 2>&1 &`. Progress
   goes to stderr; the run log in `.rpiv/workflows/runs/` is the record.
 - **Morning.** `rpiv-wf inbox` for parked questions; failed and stopped runs

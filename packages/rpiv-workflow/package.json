@@ -36,6 +36,7 @@
 		"api.ts",
 		"stage-def.ts",
 		"stage-identity.ts",
+		"stage-models.ts",
 		"stage-errors.ts",
 		"loop-def.ts",
 		"routing-dsl.ts",

@@ -74,6 +74,18 @@ describe("rpiv-wf", () => {
 		expect(h.out).toEqual(["completed (run r9): 3 stage(s)", "artifact: plan.md"]);
 	});
 
+	it("--model reaches the engine as every stage's default model (kata rb2w)", async () => {
+		const h = harness();
+		expect(await h.go(["run", "build", "x", "--model", "sonnet", "--plugin-dir", plugin()])).toBe(EXIT.ok);
+		const opts = vi.mocked(h.api.runWorkflowByName).mock.calls[0]![3] as {
+			resolveModel?: (id: { workflow: string; stage: string; skill: string }) => unknown;
+		};
+		expect(opts.resolveModel?.({ workflow: "build", stage: "plan", skill: "plan" })).toEqual({ model: "sonnet" });
+		const bare = harness();
+		await bare.go(["run", "build", "x", "--plugin-dir", plugin()]);
+		expect(vi.mocked(bare.api.runWorkflowByName).mock.calls[0]![3]).not.toHaveProperty("resolveModel");
+	});
+
 	it("resumes by reference", async () => {
 		const h = harness();
 		expect(await h.go(["resume", "dm", "--plugin-dir", plugin(), "--concurrency", "2"])).toBe(EXIT.ok);

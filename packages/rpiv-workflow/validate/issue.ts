@@ -46,6 +46,22 @@ function def(severity: "error" | "warning", render: (params: IssueParams) => str
 export const ISSUE_DEFS = {
 	// --- workflow / graph topology -----------------------------------------
 	"workflow-name-invalid": def("error", () => "workflow name must be a non-empty string"),
+	"models-stage-unknown": def<{ stage: string }>(
+		"error",
+		(p) => `models.stages["${p.stage}"] pins a model on a stage that's not declared in stages`,
+	),
+	"models-pin-invalid": def<{ stage: string }>(
+		"error",
+		(p) => `models.stages["${p.stage}"] must be a non-empty model id string`,
+	),
+	"models-revisit-unknown": def<{ stage: string }>(
+		"error",
+		(p) => `models.escalate.revisits names "${p.stage}", which is not declared in stages`,
+	),
+	"models-ladder-invalid": def(
+		"error",
+		() => "models.escalate.ladder must be a non-empty array of non-empty model id strings",
+	),
 	"start-stage-missing": def<{ start: string }>("error", (p) => `start stage "${p.start}" is not declared in stages`),
 	"edge-key-unknown": def<{ from: string }>(
 		"error",

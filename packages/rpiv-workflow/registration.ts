@@ -61,6 +61,7 @@ export {
 	type UnitSelector,
 	type VerifySpec,
 	type Workflow,
+	type WorkflowModels,
 } from "./api.js";
 export { registerBuiltIns, registerBuiltInsProvider } from "./built-ins.js";
 // The shared dispatch predicate (and SkillStage type guard) — public so

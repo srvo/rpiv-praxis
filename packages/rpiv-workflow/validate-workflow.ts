@@ -49,6 +49,32 @@ export type {
 	WorkflowValidationIssue,
 } from "./validate/issue.ts";
 
+/** `models` (pack-level pins + escalation ladder): pins name declared stages, ids are non-empty strings. */
+function checkModels(w: Workflow, r: ReturnType<typeof issueReporter>): void {
+	const models = w.models as { stages?: unknown; escalate?: { ladder?: unknown; revisits?: unknown } } | undefined;
+	if (models === undefined) return;
+	const stages = models.stages;
+	if (stages !== undefined && stages !== null && typeof stages === "object") {
+		for (const [stage, model] of Object.entries(stages)) {
+			if (!w.stages[stage]) r.report("models-stage-unknown", { stage });
+			if (typeof model !== "string" || model.length === 0) r.report("models-pin-invalid", { stage });
+		}
+	}
+	if (models.escalate !== undefined) {
+		const ladder = models.escalate?.ladder;
+		const ok =
+			Array.isArray(ladder) && ladder.length > 0 && ladder.every((m) => typeof m === "string" && m.length > 0);
+		if (!ok) r.report("models-ladder-invalid");
+		const revisits = models.escalate?.revisits;
+		if (revisits !== undefined) {
+			for (const stage of Array.isArray(revisits) ? revisits : [revisits]) {
+				if (typeof stage !== "string" || !w.stages[stage])
+					r.report("models-revisit-unknown", { stage: String(stage) });
+			}
+		}
+	}
+}
+
 /**
  * Validate one workflow. Aggregates all issues; never short-circuits. Caller
  * decides what's fatal — `severity === "error"` is the runner-blocking set.
@@ -72,6 +98,7 @@ export function validateWorkflow(
 	if (!issues.some((i) => i.code === "edge-fn-no-targets")) checkReachability(workflow, r);
 
 	checkStageSemantics(workflow, r);
+	checkModels(workflow, r);
 
 	// The publisher set is computed ONCE and threaded to both consumers.
 	const published = publishedNamesOf(workflow);

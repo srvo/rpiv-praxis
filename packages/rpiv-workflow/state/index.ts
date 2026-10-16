@@ -7,6 +7,7 @@
 export type {
 	ClaimResult,
 	LoopCapRow,
+	ModelEscalationRow,
 	NamesIndex,
 	RoutingDecision,
 	RunRecap,
@@ -19,6 +20,7 @@ export type {
 export {
 	appendHeader,
 	appendLoopCap,
+	appendModelEscalation,
 	appendRoutingDecision,
 	appendStage,
 	claimName,

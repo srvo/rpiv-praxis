@@ -421,6 +421,41 @@ export interface Workflow {
 	start: string;
 	stages: Record<string, StageDef>;
 	edges: Record<string, EdgeTarget>;
+	/** Pack-level model policy: per-stage pins and failed-verdict escalation. */
+	models?: WorkflowModels;
+}
+
+/**
+ * Which model each stage runs on, set by the workflow (pack) author. Model ids
+ * are host model keys (`provider/id`, or an id/alias the host accepts) and are
+ * compared as exact strings.
+ *
+ * Precedence for a stage's model: an escalation step, then the stage's pin,
+ * then the run's `resolveModel` (e.g. a run-wide `--model`), then the host
+ * default.
+ */
+export interface WorkflowModels {
+	/** Per-stage pins keyed by stage record key; a loop's units inherit their stage's pin. */
+	stages?: Record<string, string>;
+	/**
+	 * Escalate on a failed verdict: a verify/assess produce round that follows a
+	 * failed verdict runs one step further up `ladder` (cheapest first, e.g.
+	 * `["haiku", "sonnet", "opus"]`) per failed round, capped at the top. The
+	 * climb starts from the stage's base model's ladder position; a base model
+	 * not on the ladder (or none) starts below it, so the first escalation is
+	 * `ladder[0]`. Each step is recorded as a `model-escalation` run-log row.
+	 */
+	escalate?: {
+		ladder: readonly string[];
+		/**
+		 * Stages that re-run only after a failed grade on a graph back-edge (a
+		 * grade → fix loop, e.g. `["plan-fix", "code-fix"]`). Each completed
+		 * earlier visit of the stage in this run climbs one ladder step, so the
+		 * first fix runs on the stage's base model and every repeat lap one
+		 * step stronger. Also recorded as `model-escalation` rows.
+		 */
+		revisits?: readonly string[];
+	};
 }
 
 // ===========================================================================

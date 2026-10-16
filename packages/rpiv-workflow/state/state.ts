@@ -21,9 +21,9 @@
  * else lives in a focused module.
  */
 
-import type { UnitRole } from "../api.ts";
-import type { Output } from "../output.ts";
-import type { RunTrigger } from "../triggers.ts";
+import type { UnitRole } from "../api.js";
+import type { Output } from "../output.js";
+import type { RunTrigger } from "../triggers.js";
 
 // ---------------------------------------------------------------------------
 // Row shapes
@@ -164,6 +164,22 @@ export interface WorkflowStage {
 	 * resume rather than mis-replay.
 	 */
 	attemptOrdinal?: number;
+}
+
+/**
+ * Telemetry row: a loop unit dispatched on a stronger model than its stage's
+ * base because the previous round's verdict failed (`Workflow.models.escalate`).
+ * No `stageNumber`, so the stage readers and the resume fold skip it.
+ */
+export interface ModelEscalationRow {
+	type: "model-escalation";
+	ts: string;
+	stage: string;
+	unit?: string;
+	round: number;
+	from: string | null;
+	to: string;
+	reason: string;
 }
 
 /**
@@ -339,8 +355,8 @@ export {
 	rebuildIndex,
 	releaseName,
 	VALID_NAME,
-} from "./names.ts";
-export { generateRunId, namesFilePath, runFileFor, runsDir, stateFilePath } from "./paths.ts";
+} from "./names.js";
+export { generateRunId, namesFilePath, runFileFor, runsDir, stateFilePath } from "./paths.js";
 export {
 	listArtifacts,
 	listRuns,
@@ -351,6 +367,6 @@ export {
 	readLoopCaps,
 	readRoutingDecisions,
 	summarizeRun,
-} from "./reads.ts";
-export { resolveRun } from "./resolve.ts";
-export { appendHeader, appendLoopCap, appendRoutingDecision, appendStage } from "./writes.ts";
+} from "./reads.js";
+export { resolveRun } from "./resolve.js";
+export { appendHeader, appendLoopCap, appendModelEscalation, appendRoutingDecision, appendStage } from "./writes.js";

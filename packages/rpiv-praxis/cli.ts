@@ -415,6 +415,9 @@ export async function main(
 		lifecycle: mergeLifecycles(ledger.lifecycle, runParking.lifecycle),
 		trigger: { kind: "programmatic", source: "rpiv-praxis" },
 		...(values.name ? { name: values.name } : {}),
+		// --model is every stage's default; a pack's per-stage pin overrides it, and
+		// its escalation ladder climbs from it (the engine must see it to do either).
+		...(values.model ? { resolveModel: () => ({ model: values.model as string }) } : {}),
 	};
 	const result =
 		command === "run" || command === "step"
