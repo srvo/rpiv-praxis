@@ -2,7 +2,16 @@ import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_KATA_LABELS, detectKata, type Exec, KATA_LABEL, onPath, refFrom, ticketBody } from "./kata.js";
+import {
+	DEFAULT_KATA_LABELS,
+	detectKata,
+	type Exec,
+	KATA_LABEL,
+	onPath,
+	parkKey,
+	refFrom,
+	ticketBody,
+} from "./kata.js";
 import type { Park } from "./park-store.js";
 
 const park: Park = {
@@ -58,6 +67,22 @@ describe("kata tickets", () => {
 		expect(DEFAULT_KATA_LABELS).toContain("human");
 		expect(calls[0]!.args).not.toContain("--parent");
 		expect(calls).toHaveLength(1);
+	});
+
+	it("files each park under a stable idempotency key, so a create/ref crash-retry cannot duplicate it (kata ryvn)", () => {
+		const first = recorder({ create: '{"issue":{"short_id":"ab12"}}' });
+		const kata = detectKata(() => {}, first.exec, { PATH: binDir() })!;
+		kata.file(park, "hint");
+		const keyOf = (args: string[]) => args[args.indexOf("--idempotency-key") + 1];
+		expect(keyOf(first.calls[0]!.args)).toBe("rpiv-park:r1:1");
+		// The retry sends the SAME key, so kata returns the original ticket
+		// (verified against the daemon: `reused:true`, same short_id).
+		const retry = recorder({ create: '{"issue":{"short_id":"ab12"},"reused":true}' });
+		detectKata(() => {}, retry.exec, { PATH: binDir() })!.file({ ...park }, "hint");
+		expect(keyOf(retry.calls[0]!.args)).toBe(keyOf(first.calls[0]!.args));
+		// Distinct per question and per run — two parks must not collapse into one.
+		expect(parkKey({ ...park, n: 2 })).toBe("rpiv-park:r1:2");
+		expect(parkKey({ ...park, runId: "r2" })).toBe("rpiv-park:r2:1");
 	});
 
 	it("labels are configurable (option over env) and --kata files the park under the phase ticket", () => {

@@ -52,6 +52,19 @@ export function onPath(cmd: string, env: NodeJS.ProcessEnv = process.env): boole
 	return false;
 }
 
+/**
+ * The kata idempotency key for a park: ONE ticket per (run, question). A crash
+ * between `create` and the ref write-back used to file a DUPLICATE ticket on
+ * the retry (kata ryvn) — the park's own retry is indistinguishable from a
+ * fresh park, so the tie-break has to live server-side. kata dedupes on this
+ * key and returns the original issue (`reused: true`), so a retried create
+ * recovers the SAME ref instead of adding a second ticket. Stable for the
+ * park's whole lifetime and distinct per question.
+ */
+export function parkKey(park: Park): string {
+	return `rpiv-park:${park.runId}:${park.n}`;
+}
+
 /** A ticket's ref from `kata create --json`, whichever key the build uses. */
 export function refFrom(json: string): string | undefined {
 	try {
@@ -105,7 +118,19 @@ export function detectKata(
 				const ref = refFrom(
 					exec(
 						"kata",
-						["create", title, "--priority", "2", ...extra, "--body-stdin", "--json"],
+						[
+							"create",
+							title,
+							"--priority",
+							"2",
+							...extra,
+							// Safe retry (kata ryvn): a second create for the same park returns
+							// the ticket the first one filed rather than a duplicate.
+							"--idempotency-key",
+							parkKey(park),
+							"--body-stdin",
+							"--json",
+						],
 						ticketBody(park, answerHint),
 					),
 				);
