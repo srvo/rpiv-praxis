@@ -33,12 +33,13 @@
  * `produces()` stage.
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import {
 	type ArtifactCollector,
 	type ArtifactParser,
 	type BranchEntry,
+	type CollectContext,
 	defineCollector,
 	defineParser,
 	fs as fsHandle,
@@ -130,6 +131,30 @@ function resolveUnderArtifacts(cwd: string, basename: string, bucket?: string): 
 	return buckets.filter((b) => existsSync(join(root, b, basename))).map((b) => `.rpiv/artifacts/${b}/${basename}`);
 }
 
+// ---------------------------------------------------------------------------
+// Stage-window freshness (kata mykj)
+// ---------------------------------------------------------------------------
+//
+// A transcript mention is not proof of production: an agent quotes sibling and
+// prior-run artifacts constantly, and the last-mentioned path used to win. A
+// candidate is collected only when the file exists AND was modified inside the
+// stage window (`ctx.stageStartedAtMs`, opened by the runner at spawn). The
+// slack absorbs filesystem mtime granularity and host clock skew. With no
+// window (reattach, programmatic embedders) freshness is not enforced.
+const FRESHNESS_SLACK_MS = 2_000;
+
+/** True when `path` (repo-relative or absolute) exists and was written inside
+ *  the stage window; always true when the window is unknown. */
+export function writtenInStageWindow(path: string, ctx: Pick<CollectContext, "cwd" | "stageStartedAtMs">): boolean {
+	if (ctx.stageStartedAtMs === undefined) return true;
+	const abs = isAbsolute(path) ? path : join(ctx.cwd, path);
+	try {
+		return statSync(abs).mtimeMs >= ctx.stageStartedAtMs - FRESHNESS_SLACK_MS;
+	} catch {
+		return false; // missing — named, never written
+	}
+}
+
 /** Full-path scan first; on miss, the disk-corroborated basename fallback. */
 function withDiskFallback(primary: ArtifactCollector, bucket?: string): ArtifactCollector {
 	return defineCollector({
@@ -137,7 +162,8 @@ function withDiskFallback(primary: ArtifactCollector, bucket?: string): Artifact
 			const scanned = await primary.collect(ctx);
 			if (scanned.kind === "ok") return scanned;
 			for (const basename of basenameCandidates(ctx.branch, ctx.branchOffset)) {
-				const hits = resolveUnderArtifacts(ctx.cwd, basename, bucket);
+				// Only files written in this stage window corroborate — never another run's file.
+				const hits = resolveUnderArtifacts(ctx.cwd, basename, bucket).filter((h) => writtenInStageWindow(h, ctx));
 				if (hits.length === 1) {
 					return { kind: "ok", artifacts: [{ handle: fsHandle(hits[0]!), role: "primary" }] };
 				}
@@ -165,7 +191,7 @@ function withDiskFallback(primary: ArtifactCollector, bucket?: string): Artifact
 // basename fallback below still applies.
 const FILE_WRITING_TOOLS: ReadonlySet<string> = new Set(["write", "edit"]);
 const isFileWrite = (tc: { name: string }): boolean => FILE_WRITING_TOOLS.has(tc.name);
-const TOOL_ARG_FALLBACK = { match: isFileWrite, argKeys: ["path"] as const };
+const TOOL_ARG_FALLBACK = { match: isFileWrite, argKeys: ["path"] as const, isFresh: writtenInStageWindow };
 
 /** Bucket-agnostic — accepts any `.rpiv/artifacts/<bucket>/...md`. */
 export const rpivArtifactCollector: ArtifactCollector = withDiskFallback(

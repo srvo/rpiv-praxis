@@ -590,6 +590,14 @@ export interface StageSessionContext extends SessionContext {
 	/** Only set for continue stages — branch slice offset. */
 	branchOffset?: number;
 	/**
+	 * Epoch ms the stage window opened (set when the child session is spawned or
+	 * the continue turn is sent). Threaded onto `CollectContext.stageStartedAtMs`
+	 * so a collector can refuse an artifact that was not written in this window
+	 * — another run's or a prior round's file (kata mykj). Undefined on reattach
+	 * and for programmatic embedders: freshness is then not enforced.
+	 */
+	stageStartedAtMs?: number;
+	/**
 	 * Per-activation bash-overrun strike-ceiling override (testability) —
 	 * `undefined` ⇒ the `BASH_TIMEOUT_STRIKES` module default. Pin to `0` in a
 	 * watchdog-contract test to force immediate exhaustion; pin to `N` to drive

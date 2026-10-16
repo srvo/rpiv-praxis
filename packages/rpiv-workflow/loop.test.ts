@@ -549,7 +549,9 @@ describe("loop driver — retry-once dispatch (retryHaltedUnits)", () => {
 		const result = await runWorkflow(host.ctx, { workflow: retryWf(1, { outcome: recording }), input: "x" });
 		expect(result.success).toBe(true); // collect-all survives both halts
 		expect(host.spawns).toHaveLength(2); // both attempts ran
-		expect(seen).toEqual(["u0", "u0"]); // the fill fired on EACH attempt
+		// The fill fired on EACH attempt — twice per attempt: the initial collect and the
+		// re-collect after the one in-session collection nudge (kata mykj).
+		expect(seen).toEqual(["u0", "u0", "u0", "u0"]);
 	});
 });
 

@@ -655,7 +655,9 @@ describe("loop-resume — fanout", () => {
 		const result = await resumeWorkflow(chain.ctx, { workflow: haltWf, header, ref: "@x" });
 
 		expect(result.success).toBe(false);
-		expect(chain.sentMessages).toHaveLength(1); // ONLY the pending unit re-dispatched, carrying both memos
+		// ONLY the pending unit re-dispatched, carrying both memos (+ its one collection nudge, kata mykj).
+		expect(chain.sentMessages).toHaveLength(2);
+		expect(chain.sentMessages[1]).toMatch(/could not be collected/);
 		expect(chain.sentMessages[0]).toMatch(/^\/skill:impl phase 3\n\nPrior failures/);
 		expect(chain.sentMessages[0]).toContain("unit 1 boom");
 		expect(chain.sentMessages[0]).toContain("unit 2 boom");

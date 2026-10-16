@@ -40,7 +40,10 @@ type HaltReason =
 	// A watchdog aborted a runaway tool call (bash) past its per-command timeout. The
 	// host surfaces it via `WorkflowSessionContext.toolTimeout`; carries the operator-grade
 	// reason string written to the failed row (soft-halt errMsg / terminal errMsg).
-	| { kind: "timeout"; reason: string };
+	| { kind: "timeout"; reason: string }
+	// The turn ended `stop` but its text carried raw tool-call markup (the call never
+	// executed) — still leaked after the one in-session retry. Infra death (kata mykj).
+	| { kind: "markupLeak"; message: string };
 
 /**
  * Stop signals that witness an INFRA death — the child session never delivered
@@ -71,7 +74,8 @@ const INFRA_DEATH_STOPS: ReadonlySet<StopSignal> = new Set(["error", "noResponse
  * tool call) was judged — an identical retry is not obviously better, and the
  * deterministic floors downstream are the right judge.
  */
-const isInfraDeath = (reason: HaltReason): boolean => reason.kind === "stop" && INFRA_DEATH_STOPS.has(reason.stop);
+const isInfraDeath = (reason: HaltReason): boolean =>
+	reason.kind === "markupLeak" || (reason.kind === "stop" && INFRA_DEATH_STOPS.has(reason.stop));
 
 /**
  * The single collect-all fork. A `collectAll` fanout unit soft-halts a
@@ -106,6 +110,8 @@ function softHaltReason(s: StageSessionContext, reason: HaltReason): string {
 			return reason.failureSummary;
 		case "timeout":
 			return reason.reason;
+		case "markupLeak":
+			return reason.message;
 	}
 }
 
@@ -127,6 +133,8 @@ function failFastHalt(
 			// A non-fan-out stage whose bash overran the watchdog: terminal "failed" row whose
 			// errMsg carries the timeout reason (same shape as an extraction-fatal halt).
 			return haltStageWithExtractionError(ctx, s, reason.reason, session);
+		case "markupLeak":
+			return haltStageWithExtractionError(ctx, s, reason.message, session);
 	}
 }
 

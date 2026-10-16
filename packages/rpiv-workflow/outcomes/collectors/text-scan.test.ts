@@ -243,3 +243,41 @@ describe("textScanCollector", () => {
 		});
 	});
 });
+
+describe("textScanCollector — isFresh (kata mykj)", () => {
+	const pattern = /outputs\/[\w.-]+\.md/g;
+	const fresh = new Set(["outputs/new.md"]);
+	const isFresh = (hit: string) => fresh.has(hit);
+
+	it("skips a stale LAST-mentioned path and collects the fresh one named earlier", async () => {
+		const c = textScanCollector({ pattern, toHandle: fs, noun: "path", isFresh });
+		const branch = [asst("wrote outputs/new.md"), asst("for reference, last run's was outputs/old.md")];
+		expect(await c.collect(ctxOf(branch) as never)).toEqual({
+			kind: "ok",
+			artifacts: [{ handle: { kind: "fs", path: "outputs/new.md" }, role: "primary" }],
+		});
+	});
+
+	it("fatals when every candidate is stale instead of collecting the last mention", async () => {
+		const c = textScanCollector({ pattern, toHandle: fs, noun: "path", isFresh });
+		const result = await c.collect(ctxOf([asst("see outputs/old.md")]) as never);
+		expect(result.kind).toBe("fatal");
+		expect((result as { message: string }).message).toMatch(
+			/named outputs\/old\.md but no path .* was written during this stage/,
+		);
+	});
+
+	it("falls through to a fresh tool-argument write when the text hit is stale", async () => {
+		const c = textScanCollector({ pattern, toHandle: fs, noun: "path", isFresh });
+		const branch = [
+			asstTool([{ type: "toolCall", name: "write", arguments: { path: "outputs/new.md" } }]),
+			asst("done — outputs/old.md"),
+		];
+		const result = await c.collect(ctxOf(branch) as never);
+		expect(result).toMatchObject({ kind: "ok", artifacts: [{ handle: { path: "outputs/new.md" } }] });
+	});
+
+	it("rejects a non-function isFresh at construction", () => {
+		expect(() => textScanCollector({ pattern, toHandle: fs, noun: "path", isFresh: 1 as never })).toThrow(/isFresh/);
+	});
+});

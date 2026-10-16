@@ -678,8 +678,11 @@ describe("runWorkflow", () => {
 		expect(result.error).toMatch(/without producing|no artifact/i);
 		// Stage 2 must NOT have been spawned — second scripted step still queued.
 		expect(chain.remaining()).toBe(1);
-		// Only the first prompt went out (no silent re-send of original input).
-		expect(chain.sentMessages).toEqual(["/skill:research describe the thing"]);
+		// Only the first prompt went out (no silent re-send of original input) — plus the
+		// one in-session collection nudge naming what was missing (kata mykj).
+		expect(chain.sentMessages).toHaveLength(2);
+		expect(chain.sentMessages[0]).toBe("/skill:research describe the thing");
+		expect(chain.sentMessages[1]).toMatch(/^The research stage finished, but its output could not be collected/);
 
 		const { stages } = readState(tmpDir);
 		expect(stages).toHaveLength(1);

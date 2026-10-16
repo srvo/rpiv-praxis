@@ -161,6 +161,31 @@ export function lastAssistantText(branch: BranchEntry[], offsetStart?: number): 
 	return undefined;
 }
 
+/**
+ * Raw tool-call markup a model emitted as TEXT instead of a structured tool
+ * call — the call never executed, yet the turn ends `stopReason:"stop"` and
+ * reads as a clean completion (kata mykj). Each pattern is a model family's
+ * wire syntax, not prose: DeepSeek DSML (`<｜DSML｜function_calls>`) and its
+ * special-token form (`<｜tool▁calls▁begin｜>`), Kimi's section tokens,
+ * Anthropic-style `<function_calls>`/`<invoke name=`, and a Qwen/GLM-style
+ * `<tool_call>` immediately followed by a JSON object.
+ */
+const LEAKED_TOOL_MARKUP_PATTERNS: readonly RegExp[] = [
+	/<[｜|]\s*DSML\s*[｜|]/,
+	/<[｜|]tool[▁_]calls?[▁_]begin[｜|]>/,
+	/<\|tool_calls_section_begin\|>/,
+	/<function_calls>/,
+	/<invoke name=["']/,
+	/<tool_call>\s*\{/,
+];
+
+/** True when the LAST assistant message's text carries leaked tool-call markup
+ *  (see `LEAKED_TOOL_MARKUP_PATTERNS`). Pure — no I/O. */
+export function hasLeakedToolMarkup(branch: BranchEntry[], offsetStart?: number): boolean {
+	const text = lastAssistantText(branch, offsetStart);
+	return text !== undefined && LEAKED_TOOL_MARKUP_PATTERNS.some((p) => p.test(text));
+}
+
 // ---------------------------------------------------------------------------
 // Shared collector building blocks
 // ---------------------------------------------------------------------------

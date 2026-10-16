@@ -50,7 +50,7 @@ export async function reattachStageSession(
 	// threaded back via `s.branchOffset`; fresh stages scan the whole branch).
 	const offset = branchOffsetFor(s.stage.sessionPolicy, s.branchOffset);
 	const session = readSessionRef(child, offset);
-	const result = await produceAndValidateOutput(child, s, readBranch(child), offset);
+	const result = await produceAndValidateOutput(child, s, readBranch(child), offset, { nudge: false });
 
 	if (result.kind === "ok") {
 		observerCtx.ui.notify(MSG_RESUME_PROMOTED(s.skill), "info");

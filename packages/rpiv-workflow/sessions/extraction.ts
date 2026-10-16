@@ -72,6 +72,9 @@ export async function produceAndValidateOutput(
 	s: StageSessionContext,
 	branch: BranchEntry[],
 	branchOffset: number | undefined,
+	// Promotion (`reattach.ts`) passes false: a collection miss there is answered by
+	// the reattach prompt itself, so it must not spend the nudge first.
+	{ nudge = true }: { nudge?: boolean } = {},
 ): Promise<OutputProduction> {
 	// Allocate the activation's stage number ONCE, before any output envelope
 	// is built — the envelope's `meta.stageNumber`, the eventual audit row
@@ -81,15 +84,63 @@ export async function produceAndValidateOutput(
 	const collectCtx = buildCollectCtx(s, branch, branchOffset);
 	const finalize = (parts: { kind: string; artifacts: readonly Artifact[]; data: unknown }) => wrapOutput(s, parts);
 
-	const first = await runOutcome(outcome, collectCtx, finalize);
-	if (first.kind === "fatal") return first;
-	const initialOutput = enforceCompletionContract(s.stage, s.skill, first.output);
-	if (initialOutput.kind === "fatal") return initialOutput;
+	const produced = await produceWithNudge(ctx, s, outcome, collectCtx, finalize, nudge);
+	if (produced.kind === "fatal") return produced;
+	const { output, collectCtx: settledCtx } = produced;
 
-	if (!shouldValidateOutput(s, initialOutput.output)) return initialOutput;
+	if (!shouldValidateOutput(s, output)) return { kind: "ok", output };
 
-	return retryUntilValid(ctx, s, { outcome, collectCtx, finalize }, initialOutput.output);
+	return retryUntilValid(ctx, s, { outcome, collectCtx: settledCtx, finalize }, output);
 }
+
+/**
+ * Initial production with ONE in-session nudge (kata mykj). A collector/parser
+ * fatal or an empty `produces` result usually means the agent announced an
+ * artifact it never wrote (or wrote it outside the stage window) — the session
+ * is still live, so tell it exactly what was missing and re-collect once before
+ * halting, instead of discarding a multi-hour session on its last step. The
+ * re-collection reads the branch AFTER the nudge turn; a second fatal halts with
+ * that message.
+ */
+async function produceWithNudge(
+	ctx: WorkflowSessionContext,
+	s: StageSessionContext,
+	outcome: Outcome,
+	collectCtx: CollectContext,
+	finalize: (parts: { kind: string; artifacts: readonly Artifact[]; data: unknown }) => Output,
+	nudge: boolean,
+): Promise<{ kind: "ok"; output: Output; collectCtx: CollectContext } | Fatal> {
+	const attempt = async (c: CollectContext): Promise<{ kind: "ok"; output: Output } | Fatal> => {
+		const run = await runOutcome(outcome, c, finalize);
+		return run.kind === "fatal" ? run : enforceCompletionContract(s.stage, s.skill, run.output);
+	};
+	const first = await attempt(collectCtx);
+	if (first.kind === "ok") return { ...first, collectCtx };
+	if (!nudge) return first;
+	const timeoutMs = clampRange(
+		s.stage.validateTimeoutMs,
+		MIN_VALIDATION_RETRY_TIMEOUT_MS,
+		DEFAULT_VALIDATION_RETRY_TIMEOUT_MS,
+		MAX_VALIDATION_RETRY_TIMEOUT_MS,
+	);
+	try {
+		await withTimeout(
+			resendIntoChild(ctx, MSG_COLLECTION_NUDGE(s.skill, first.message)),
+			timeoutMs,
+			`${s.skill}: collection nudge exceeded ${timeoutMs}ms — agent did not settle`,
+		);
+	} catch (e) {
+		return { kind: "fatal", message: `${first.message} (nudge failed: ${formatError(e)})` };
+	}
+	const nudgedCtx: CollectContext = { ...collectCtx, branch: readBranch(ctx) };
+	const second = await attempt(nudgedCtx);
+	return second.kind === "ok" ? { ...second, collectCtx: nudgedCtx } : second;
+}
+
+/** Model-facing nudge after a collection fatal — names what the engine could not find. */
+const MSG_COLLECTION_NUDGE = (skill: string, problem: string) =>
+	`The ${skill} stage finished, but its output could not be collected: ${problem}\n\n` +
+	"Write the artifact now (with a file-writing tool, during this turn), then state its exact path in your final message.";
 
 /**
  * Explicit `stage.outcome` wins. Defaults:
@@ -139,6 +190,7 @@ function buildCollectCtx(
 		snapshot: s.snapshot,
 		skill: s.skill,
 		...(s.unit?.label !== undefined ? { unitLabel: s.unit.label } : {}),
+		...(s.stageStartedAtMs !== undefined ? { stageStartedAtMs: s.stageStartedAtMs } : {}),
 	};
 }
 

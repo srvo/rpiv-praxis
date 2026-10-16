@@ -22,11 +22,11 @@
  * (validated there, at construction, by delegation).
  */
 
-import { fs } from "../../handle.ts";
-import type { ArtifactCollector } from "../../output-spec.ts";
-import { requireOpt } from "./require-opt.ts";
-import { textScanCollector } from "./text-scan.ts";
-import type { ToolCall } from "./tool-call.ts";
+import { fs } from "../../handle.js";
+import type { ArtifactCollector, CollectContext } from "../../output-spec.js";
+import { requireOpt } from "./require-opt.js";
+import { textScanCollector } from "./text-scan.js";
+import type { ToolCall } from "./tool-call.js";
 
 export interface TranscriptPathCollectorOpts {
 	/**
@@ -48,6 +48,9 @@ export interface TranscriptPathCollectorOpts {
 	 * construction-time guard applies by delegation.
 	 */
 	argKeys?: readonly string[];
+	/** Freshness proof per candidate path — forwarded verbatim to
+	 *  `textScanCollector` (kata mykj). */
+	isFresh?: (hit: string, ctx: CollectContext) => boolean;
 }
 
 export function transcriptPathCollector(opts: TranscriptPathCollectorOpts): ArtifactCollector {
@@ -58,5 +61,6 @@ export function transcriptPathCollector(opts: TranscriptPathCollectorOpts): Arti
 		noun: "path",
 		match: opts.match,
 		argKeys: opts.argKeys,
+		isFresh: opts.isFresh,
 	});
 }

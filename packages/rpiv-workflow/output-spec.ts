@@ -60,6 +60,13 @@ export interface CollectContext<Snapshot = unknown> extends SnapshotContext {
 	 * degrade to their loose shapes, never fatal on what they accepted before.
 	 */
 	unitLabel?: string;
+	/**
+	 * Epoch ms the stage window opened. A collector that names files on disk
+	 * should accept only files modified at/after this instant (minus clock
+	 * slack) — anything older was written by another run or a prior round
+	 * (kata mykj). Absent ⇒ freshness unknown; collectors must not enforce it.
+	 */
+	stageStartedAtMs?: number;
 }
 
 /**
