@@ -29,6 +29,16 @@ describe("createRunParking", () => {
 		expect(vi.mocked(kata.file).mock.calls[0]![1]).toBe("rpiv-wf answer r1 1 <choice>");
 	});
 
+	it("records the stage the host says asked, not whichever started last (kata 79yy)", () => {
+		const cwd = project();
+		const rp = createRunParking({ cwd, stop: vi.fn(), notify: () => {} });
+		rp.lifecycle.onWorkflowStart!(lifecycleCtx);
+		rp.lifecycle.onStageStart!({ kind: "skill", name: "design (s1)", stageNumber: 1, skill: "d" }, lifecycleCtx);
+		rp.lifecycle.onStageStart!({ kind: "skill", name: "design (s2)", stageNumber: 2, skill: "d" }, lifecycleCtx);
+		rp.parking.park({ prompt: "/skill:d", sessionId: "s1", questions: [ask], stage: "design (s1)" });
+		expect(readParks(cwd, "r1")[0]).toMatchObject({ stage: "design (s1)" });
+	});
+
 	it("still stops the run when it cannot park (no run id yet)", () => {
 		const cwd = project();
 		const stop = vi.fn();

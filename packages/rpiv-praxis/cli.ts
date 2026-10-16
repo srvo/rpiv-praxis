@@ -29,7 +29,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { RunWorkflowResult, WorkflowHostContext } from "@juicesharp/rpiv-workflow";
 import { type ClaudeHostDeps, ClaudeWorkflowHost } from "./claude-host.js";
-import { detectKata, type Kata } from "./kata.js";
+import { detectKata, type Kata, type KataOptions } from "./kata.js";
 import { formatPark, openParks, readParks, resolveChoice, resolveRunId, updatePark } from "./park-store.js";
 import { createRunParking } from "./parking.js";
 import { registerRpivWorkflowSupport } from "./rpiv-support.js";
@@ -75,6 +75,8 @@ options:
   --stage-max-cost <usd>     stop the run once any one stage has cost this much (exit 76)
   --stage-max-tokens <n>     stop the run once any one stage has used this many tokens (exit 76)
   --no-resume                answer: record the answer without resuming the run
+  --kata <ref>               file each parked question's ticket under this phase ticket
+  --kata-labels <a,b>        labels for parked-question tickets (default rpiv-parked,human)
 
 <choice> is an option number, an option label, or free text.
 
@@ -151,6 +153,8 @@ export async function main(
 		deps?: ClaudeHostDeps;
 		signal?: AbortSignal;
 		kata?: Kata | null;
+		/** Builds the kata client when `kata` is not injected (tests). */
+		detectKata?: typeof detectKata;
 		metricsFile?: string;
 	} = {},
 ): Promise<number> {
@@ -183,6 +187,8 @@ export async function main(
 				"stage-max-tokens": { type: "string" },
 				continue: { type: "string" },
 				"dry-run": { type: "boolean" },
+				kata: { type: "string" },
+				"kata-labels": { type: "string" },
 				help: { type: "boolean", short: "h" },
 			},
 		});
@@ -286,7 +292,14 @@ export async function main(
 	}
 
 	const warn = (m: string) => io.err(`[warning] ${m}`);
-	const kata = inject.kata === undefined ? detectKata(warn) : (inject.kata ?? undefined);
+	const kataOpts: KataOptions = {
+		...(typeof values["kata-labels"] === "string" ? { labels: listFlag(values["kata-labels"]) ?? [] } : {}),
+		...(typeof values.kata === "string" ? { parent: values.kata } : {}),
+	};
+	const kata =
+		inject.kata === undefined
+			? (inject.detectKata ?? detectKata)(warn, undefined, undefined, kataOpts)
+			: (inject.kata ?? undefined);
 	let resumeRef = target;
 	if (command === "answer") {
 		const runId = resolveRunId(cwd, target!);
@@ -382,7 +395,8 @@ export async function main(
 		cwd,
 		runId: priorRunId,
 		kata,
-		stop: () => stop.abort(),
+		// Soft stop: siblings already running finish and are kept; no new turn starts.
+		stop: () => halt.abort(),
 		notify: (m) => io.err(`[info] ${m}`),
 	});
 	const host = new ClaudeWorkflowHost(

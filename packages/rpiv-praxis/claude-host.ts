@@ -115,7 +115,8 @@ export interface TurnUsage {
  * and sends the answer instead of starting the stage over.
  */
 export interface Parking {
-	park(info: { prompt: string; sessionId: string; sessionFile?: string; questions: unknown }): void;
+	/** `stage` is the engine's name for the stage that asked (undefined when the engine gave none). */
+	park(info: { prompt: string; sessionId: string; sessionFile?: string; questions: unknown; stage?: string }): void;
 	answerFor(prompt: string):
 		| {
 				sessionId: string;
@@ -412,6 +413,7 @@ class ClaudeChildSession implements WorkflowSessionContext {
 			sessionId: this.sessionId,
 			sessionFile: this.sessionManager.getSessionFile(),
 			questions: input.questions,
+			...(this.stage !== undefined ? { stage: this.stage } : {}),
 		});
 		return { behavior: "deny" as const, message: PARKED_MESSAGE, interrupt: true };
 	}

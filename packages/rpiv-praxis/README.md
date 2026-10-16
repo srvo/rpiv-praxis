@@ -72,6 +72,8 @@ Without the global install, `rpiv-wf` is
 | `--timeout <minutes>` | none | stop once the run has run this long, across resumes |
 | `--stage-max-cost <usd>` | none | stop once any one stage has cost this much |
 | `--stage-max-tokens <n>` | none | stop once any one stage has used this many tokens |
+| `--kata <ref>` | none | file parked-question tickets under this phase ticket |
+| `--kata-labels <a,b>` | `rpiv-parked,human` | labels for parked-question tickets (`none` = no labels) |
 
 | Exit | Means | Next |
 | --- | --- | --- |
@@ -177,12 +179,15 @@ A stage that needs a person does not guess. When a skill calls
 1. The question and its options are saved beside the run log, in
    `.rpiv/workflows/runs/<run-id>.parked.json`. The run log itself keeps
    upstream's format.
-2. If `kata` is on PATH, a ticket is filed and labelled `rpiv-parked`, with the
-   answer command in its body. Not `human` or `decision`: monocloud's hourly
-   producer copies those two labels into `activity.timeline`, and parked
-   questions stay out of the database for now. `RPIV_WF_KATA=off` disables it;
+2. If `kata` is on PATH, a ticket is filed with the answer command in its
+   body, labelled `rpiv-parked` and `human` (monocloud's hourly producer copies
+   `human` onto `activity.timeline`). `--kata-labels a,b` (or
+   `RPIV_WF_KATA_LABELS`) replaces the labels, `none` files none; `--kata <ref>`
+   files each park under that phase ticket. `RPIV_WF_KATA=off` disables kata;
    any kata failure is a warning, never a stop.
-3. The run stops cleanly and `rpiv-wf` exits `75`.
+3. The run soft-stops: stages and fan-out units already running finish and are
+   kept, no new turn starts, and `rpiv-wf` exits `75`. The park records the
+   stage that asked.
 
 `rpiv-wf inbox` lists every waiting question in the project, oldest first.
 `rpiv-wf answer <run> <n> <choice>` takes an option number, a label, or free
@@ -194,8 +199,7 @@ Run in passes: start or resume several runs, let each go until it finishes or
 parks, then work through the inbox.
 
 Limits: one question is answered per park (a multi-question AskUserQuestion
-takes one free-text answer covering all of them); a park stops the whole run,
-so fan-out units still in flight are re-run on resume; parking needs the
+takes one free-text answer covering all of them); parking needs the
 Claude Code host (Pi has its own in-session parking in the lane console).
 
 ## Steps: one skill, full guarantees

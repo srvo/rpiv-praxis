@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { detectKata, type Exec, KATA_LABEL, onPath, refFrom, ticketBody } from "./kata.js";
+import { DEFAULT_KATA_LABELS, detectKata, type Exec, KATA_LABEL, onPath, refFrom, ticketBody } from "./kata.js";
 import type { Park } from "./park-store.js";
 
 const park: Park = {
@@ -45,15 +45,32 @@ describe("kata detection", () => {
 });
 
 describe("kata tickets", () => {
-	it("files a ticket labelled rpiv-parked, never human or decision", () => {
+	const labelsOf = (args: string[]) => args.flatMap((a, i) => (args[i - 1] === "--label" ? [a] : []));
+
+	it("files a ticket labelled rpiv-parked and human by default, so it reaches the timeline (kata 79yy)", () => {
 		const { calls, exec } = recorder({ create: '{"issue":{"ref":"ab12"}}' });
 		const kata = detectKata(() => {}, exec, { PATH: binDir() })!;
 		expect(kata.file(park, "rpiv-wf answer r1 1 <choice>")).toBe("ab12");
 		expect(calls[0]!.args.slice(0, 1)).toEqual(["create"]);
 		expect(calls[0]!.args).toEqual(expect.arrayContaining(["--body-stdin", "--json"]));
 		expect(calls[0]!.input).toContain("rpiv-wf answer r1 1 <choice>");
-		expect(calls[1]!.args).toEqual(["label", "add", "ab12", KATA_LABEL]);
-		expect(KATA_LABEL).not.toMatch(/^(human|decision)$/);
+		expect(labelsOf(calls[0]!.args)).toEqual([KATA_LABEL, "human"]);
+		expect(DEFAULT_KATA_LABELS).toContain("human");
+		expect(calls[0]!.args).not.toContain("--parent");
+		expect(calls).toHaveLength(1);
+	});
+
+	it("labels are configurable (option over env) and --kata files the park under the phase ticket", () => {
+		const a = recorder({ create: '{"ref":"x1"}' });
+		detectKata(() => {}, a.exec, { PATH: binDir() }, { labels: ["rpiv-parked"], parent: "ph42" })!.file(park, "h");
+		expect(labelsOf(a.calls[0]!.args)).toEqual(["rpiv-parked"]);
+		expect(a.calls[0]!.args.join(" ")).toContain("--parent ph42");
+		const b = recorder({ create: '{"ref":"x1"}' });
+		detectKata(() => {}, b.exec, { PATH: binDir(), RPIV_WF_KATA_LABELS: "a, b" })!.file(park, "h");
+		expect(labelsOf(b.calls[0]!.args)).toEqual(["a", "b"]);
+		const c = recorder({ create: '{"ref":"x1"}' });
+		detectKata(() => {}, c.exec, { PATH: binDir() }, { labels: [] })!.file(park, "h");
+		expect(labelsOf(c.calls[0]!.args)).toEqual([]);
 	});
 
 	it("closes the ticket with the answer", () => {
@@ -73,11 +90,7 @@ describe("kata tickets", () => {
 		failing.close(park);
 		const noRef = detectKata((m) => warnings.push(m), recorder({ create: "not json" }).exec, { PATH: binDir() })!;
 		expect(noRef.file(park, "hint")).toBeUndefined();
-		const badLabel = detectKata((m) => warnings.push(m), recorder({ create: '{"ref":"x1"}', label: boom }).exec, {
-			PATH: binDir(),
-		})!;
-		expect(badLabel.file(park, "hint")).toBe("x1");
-		expect(warnings).toHaveLength(4);
+		expect(warnings).toHaveLength(3);
 	});
 
 	it("reads the ref from the common response shapes", () => {

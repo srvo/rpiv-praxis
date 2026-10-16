@@ -322,6 +322,20 @@ describe("ClaudeWorkflowHost — parking", () => {
 		expect(lastAssistant(branch).stopReason).toBe("aborted");
 	});
 
+	it("names the stage that actually asked in the park (kata 79yy)", async () => {
+		const parking = parkingStub();
+		const sdk = fakeSdk([
+			(call) =>
+				(async function* () {
+					yield init("s1");
+					await call.options.canUseTool("AskUserQuestion", ask, { signal: new AbortController().signal });
+					yield result("s1", "error_during_execution");
+				})(),
+		]);
+		await run(host(sdk.deps, { parking }).h, { stage: "design (slice-2)" });
+		expect(parking.park).toHaveBeenCalledWith(expect.objectContaining({ stage: "design (slice-2)" }));
+	});
+
 	it("denies every other tool, exactly as an unattended run without the callback would", async () => {
 		const parking = parkingStub();
 		let verdict: any;

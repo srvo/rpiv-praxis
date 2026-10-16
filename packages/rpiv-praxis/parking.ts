@@ -1,7 +1,9 @@
 /**
  * Wires the host's Parking hooks to the park store and (optionally) kata, for
- * one rpiv-wf run or resume. The runner announces the run id and the current
- * stage through lifecycle events; a park stops the whole run through `stop`.
+ * one rpiv-wf run or resume. The runner announces the run id through lifecycle
+ * events; the host names the stage that asked (falling back to the stage that
+ * started last). A park calls `stop`, which rpiv-wf wires to a soft stop:
+ * siblings already running finish and are kept, and no new turn starts.
  */
 
 import type { LifecycleListeners } from "@juicesharp/rpiv-workflow";
@@ -61,10 +63,11 @@ export function createRunParking(opts: {
 				opts.stop();
 				return;
 			}
+			const asked = info.stage ?? stage;
 			let park = addPark(opts.cwd, {
 				runId,
 				workflow,
-				stage,
+				stage: asked,
 				prompt: info.prompt,
 				sessionId: info.sessionId,
 				sessionFile: info.sessionFile,
@@ -73,7 +76,7 @@ export function createRunParking(opts: {
 			const ref = opts.kata?.file(park, `rpiv-wf answer ${runId} ${park.n} <choice>`);
 			if (ref) park = updatePark(opts.cwd, runId, park.n, { kata: ref }) ?? park;
 			recorded.push(park);
-			opts.notify(`parked ${stage ?? "stage"}: ${park.questions[0]?.question ?? "a question"}`);
+			opts.notify(`parked ${asked ?? "stage"}: ${park.questions[0]?.question ?? "a question"}`);
 			opts.stop();
 		},
 		answerFor(prompt) {

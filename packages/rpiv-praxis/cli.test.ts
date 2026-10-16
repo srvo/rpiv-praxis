@@ -247,6 +247,53 @@ describe("rpiv-wf parked questions", () => {
 		expect(a.out.at(-1)).toBe("parked: answer with `rpiv-wf answer r9 1 <choice>`");
 		expect(readParks(cwd, "r9")).toHaveLength(1);
 	});
+
+	it("a park soft-stops the run: siblings finish, nothing new starts, the run is not aborted (kata 79yy)", async () => {
+		const cwd = project();
+		const h = harness({ success: false, stagesCompleted: 0, runId: "r9" });
+		let signals: { run?: AbortSignal; halt?: AbortSignal } = {};
+		vi.mocked(h.api.runWorkflowByName).mockImplementationOnce(async (ctx, _n, _i, opts) => {
+			const o = opts as { signal: AbortSignal; lifecycle: { onWorkflowStart(c: unknown): void } };
+			o.lifecycle.onWorkflowStart({ runId: "r9", workflow: "wf" });
+			const host = ctx as unknown as { opts: { halt: AbortSignal; parking: { park(i: unknown): void } } };
+			host.opts.parking.park({ prompt: "/skill:pick", sessionId: "s1", questions: [ask] });
+			signals = { run: o.signal, halt: host.opts.halt };
+			return { success: false, stagesCompleted: 0, runId: "r9" };
+		});
+		const code = await main(["run", "wf", "--cwd", cwd, "--plugin-dir", plugin()], io().io, {
+			api: h.api,
+			deps: { query: vi.fn(), forkSession: vi.fn() } as never,
+			kata: null,
+		});
+		expect(code).toBe(EXIT.parked);
+		expect(signals.halt?.aborted).toBe(true);
+		expect(signals.run?.aborted).toBe(false);
+	});
+
+	it("--kata and --kata-labels configure the park tickets", async () => {
+		const detect = vi.fn(() => undefined);
+		const h = harness();
+		await main(
+			[
+				"run",
+				"wf",
+				"--kata",
+				"ph42",
+				"--kata-labels",
+				"rpiv-parked,human,phase",
+				"--cwd",
+				project(),
+				"--plugin-dir",
+				plugin(),
+			],
+			io().io,
+			{ api: h.api, deps: { query: vi.fn(), forkSession: vi.fn() } as never, detectKata: detect },
+		);
+		expect(detect).toHaveBeenCalledWith(expect.any(Function), undefined, undefined, {
+			labels: ["rpiv-parked", "human", "phase"],
+			parent: "ph42",
+		});
+	});
 });
 
 describe("rpiv-wf steps", () => {
