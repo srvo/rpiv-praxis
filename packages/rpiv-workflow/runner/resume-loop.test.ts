@@ -156,7 +156,12 @@ describe("loop-resume — fanout", () => {
 	const fanoutWf: Workflow = {
 		name: "fanout-wf",
 		start: "impl",
-		stages: { impl: produces({ outcome: transcriptOutcome("plans"), loop: fanout({ units: threeUnits }) }) },
+		stages: {
+			impl: produces({
+				outcome: transcriptOutcome("plans"),
+				loop: fanout({ units: threeUnits, onHole: "continue" }),
+			}),
+		},
 		edges: { impl: "stop" },
 	} as Workflow;
 
@@ -314,7 +319,10 @@ describe("loop-resume — fanout", () => {
 			name: "fanout-wf",
 			start: "impl",
 			stages: {
-				impl: produces({ outcome: transcriptOutcome("plans"), loop: fanout({ units: threeUnits }) }),
+				impl: produces({
+					outcome: transcriptOutcome("plans"),
+					loop: fanout({ units: threeUnits, onHole: "continue" }),
+				}),
 				synthesize: acts({ reads: [fanin("plans")] }),
 			},
 			edges: { impl: "synthesize", synthesize: "stop" },
@@ -373,7 +381,10 @@ describe("loop-resume — fanout", () => {
 			name: "fanout-wf",
 			start: "impl",
 			stages: {
-				impl: produces({ outcome: transcriptOutcome("plans"), loop: fanout({ units: threeUnits }) }),
+				impl: produces({
+					outcome: transcriptOutcome("plans"),
+					loop: fanout({ units: threeUnits, onHole: "continue" }),
+				}),
 				capture: acts.script({
 					run: ({ state }) => {
 						captured = [...(state.named.plans ?? [])];
@@ -415,7 +426,7 @@ describe("loop-resume — fanout", () => {
 			stages: {
 				impl: produces({
 					outcome: transcriptOutcome("plans"),
-					loop: fanout({ units: threeUnits, retryHaltedUnits: 1 }),
+					loop: fanout({ units: threeUnits, retryHaltedUnits: 1, onHole: "continue" }),
 				}),
 				capture: acts.script({
 					run: ({ state }) => {
@@ -469,7 +480,7 @@ describe("loop-resume — fanout", () => {
 			stages: {
 				impl: produces({
 					outcome: transcriptOutcome("plans"),
-					loop: fanout({ units: threeUnits, retryHaltedUnits: 2 }),
+					loop: fanout({ units: threeUnits, retryHaltedUnits: 2, onHole: "continue" }),
 				}),
 				capture: acts.script({
 					run: ({ state }) => {
@@ -507,7 +518,7 @@ describe("loop-resume — fanout", () => {
 			stages: {
 				impl: produces({
 					outcome: transcriptOutcome("plans"),
-					loop: fanout({ units: threeUnits, retryHaltedUnits: 1 }),
+					loop: fanout({ units: threeUnits, retryHaltedUnits: 1, onHole: "continue" }),
 				}),
 				note: acts({ reads: [fanin("plans")] }),
 			},
@@ -549,7 +560,7 @@ describe("loop-resume — fanout", () => {
 			stages: {
 				impl: produces({
 					outcome: transcriptOutcome("plans"),
-					loop: fanout({ units: threeUnits, retryHaltedUnits: 1 }),
+					loop: fanout({ units: threeUnits, retryHaltedUnits: 1, onHole: "continue" }),
 				}),
 				capture: acts.script({
 					run: ({ state }) => {
@@ -596,7 +607,7 @@ describe("loop-resume — fanout", () => {
 			stages: {
 				impl: produces({
 					outcome: transcriptOutcome("plans"),
-					loop: fanout({ units: threeUnits, haltWhenAllFailed: true }),
+					loop: fanout({ units: threeUnits, haltWhenAllFailed: true, onHole: "continue" }),
 				}),
 			},
 			edges: { impl: "stop" },
@@ -638,7 +649,7 @@ describe("loop-resume — fanout", () => {
 			stages: {
 				impl: produces({
 					outcome: transcriptOutcome("plans"),
-					loop: fanout({ units: threeUnits, haltWhenAllFailed: true }),
+					loop: fanout({ units: threeUnits, haltWhenAllFailed: true, onHole: "continue" }),
 				}),
 			},
 			edges: { impl: "stop" },

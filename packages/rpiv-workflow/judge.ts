@@ -98,8 +98,18 @@ export type Judge = SkillJudge | PromptJudge;
  * (canonical `PANEL_VERDICT` vs. a custom author schema), validated downstream
  * by the panel's `outcome`. The fold is pure (the replay contract leans on
  * this: live + resume both recompute it from the durable member rows).
+ *
+ * `info.members` is the panel's declared member count, so a fold can tell a
+ * full verdict set from a partial one (a missing or failed member verdict).
+ * Optional so folds called outside a panel close stay valid.
  */
-export type FoldFn = (verdicts: readonly Output[]) => unknown;
+export type FoldFn = (verdicts: readonly Output[], info?: PanelFoldInfo) => unknown;
+
+/** Context the panel close hands its fold. */
+export interface PanelFoldInfo {
+	/** Declared member count (`panel.members.length`). */
+	members: number;
+}
 
 /**
  * N independent judges plus a vote `fold` — the adversarial-verification

@@ -46,7 +46,9 @@ import {
 	advanceCursor,
 	allFanoutSlotsFailed,
 	buildUnitSession,
+	failedFanoutSlotLabels,
 	foldFanoutCompletion,
+	isHaltOnHole,
 	isHaltWhenAllFailed,
 	type LoopCursor,
 	type LoopDeps,
@@ -331,6 +333,13 @@ async function finishLoop(
 	// never qualifies (beyond-cap slots stay unfilled).
 	if (isHaltWhenAllFailed(e.loop) && allFanoutSlotsFailed(cursor)) {
 		await deps.haltLoopWhenAllFailed(hostCtx, run, e, cursor.filledCount ?? 0, cursor.slots?.length ?? 0);
+		return;
+	}
+	// onHole (default "halt") — a collect-all generation that closes with ANY failed
+	// slot halts here instead of advancing a fan-in that would stitch around the hole.
+	const holes = isHaltOnHole(e.loop) ? failedFanoutSlotLabels(cursor) : [];
+	if (holes.length > 0) {
+		await deps.haltLoopOnHole(hostCtx, run, e, holes, cursor.slots?.length ?? 0);
 		return;
 	}
 	projectResult(e.loop, e.entryPair, cursor, run.state);

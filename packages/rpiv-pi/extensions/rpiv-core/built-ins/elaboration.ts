@@ -5,11 +5,17 @@
  * mis-splice while the lane is still alive to fix it.
  */
 import { readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
-import { defineParser, type Outcome, type ParseContext } from "@juicesharp/rpiv-workflow/registration";
-import { frontmatterParser, rpivBucketOutcome } from "../artifact-collector.ts";
-import { countHeadingsOutsideFences, openFenceLine } from "./markdown-fence.ts";
-import { PLAN_PHASE_RE } from "./plan-phases.ts";
+import { basename, isAbsolute, join } from "node:path";
+import {
+	defineParser,
+	isFailedOutput,
+	type Outcome,
+	type ParseContext,
+	type RunView,
+} from "@juicesharp/rpiv-workflow/registration";
+import { frontmatterParser, rpivBucketOutcome } from "../artifact-collector.js";
+import { countHeadingsOutsideFences, forEachLineOutsideFences, openFenceLine } from "./markdown-fence.js";
+import { PLAN_PHASE_RE } from "./plan-phases.js";
 
 interface ElaborationStructure {
 	/** `"balanced"`, or the diagnosis the contract's enum failure surfaces verbatim. */
@@ -50,4 +56,47 @@ const elaborationOutcome: Outcome<unknown, "artifact-md", Record<string, unknown
 	parser: elaborationParser,
 };
 
-export { type ElaborationStructure, elaborationOutcome, elaborationParser, elaborationStructure };
+/** The channel the elaborate fanout publishes on (`rpivBucketOutcome("elaborations")`). */
+const ELABORATIONS_CHANNEL = "elaborations";
+
+/**
+ * Phases of `planContent` the elaborate fanout did NOT cover in this run — the
+ * splice's coverage precondition. A phase is covered only by a non-failed
+ * output on the elaborations channel whose artifact is
+ * `<plan-basename>__phase-<N>.md`; a failed unit's sentinel or an absent output
+ * is a gap (as is any failed sentinel on the channel). Reading the in-run
+ * channel, not the disk, means another run's leftover elaboration file can
+ * never stand in for a phase this run failed to elaborate. Empty ⇒ splice.
+ */
+const elaborationCoverageGaps = (state: RunView, planPath: string, planContent: string): string[] => {
+	const stem = basename(planPath).replace(/\.md$/, "");
+	const phases: number[] = [];
+	forEachLineOutsideFences(planContent, (line) => {
+		const m = /^## Phase (\d+):/.exec(line);
+		if (m) phases.push(Number(m[1]));
+	});
+	const outputs = (state.named[ELABORATIONS_CHANNEL] ?? []).filter((o) => o !== undefined);
+	const failed = outputs.filter((o) => isFailedOutput(o)).length;
+	const covered = new Set<number>();
+	for (const o of outputs) {
+		if (isFailedOutput(o)) continue;
+		for (const a of o.artifacts) {
+			if (a.handle.kind !== "fs") continue;
+			const name = basename(a.handle.path);
+			const prefix = `${stem}__phase-`;
+			const n = name.startsWith(prefix) && name.endsWith(".md") ? name.slice(prefix.length, -3) : "";
+			if (/^\d+$/.test(n)) covered.add(Number(n));
+		}
+	}
+	const gaps = phases.filter((n) => !covered.has(n)).map((n) => `phase ${n}`);
+	if (failed > 0) gaps.push(`${failed} failed elaborate unit(s)`);
+	return gaps;
+};
+
+export {
+	type ElaborationStructure,
+	elaborationCoverageGaps,
+	elaborationOutcome,
+	elaborationParser,
+	elaborationStructure,
+};

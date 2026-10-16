@@ -6,7 +6,7 @@
  */
 
 import { type Static, Type } from "typebox";
-import type { StageDef } from "../api.ts";
+import type { StageDef } from "../api.js";
 import {
 	assertShape,
 	brandCanonicalFold,
@@ -15,10 +15,11 @@ import {
 	judgeShapeIssues,
 	marksCanonicalFold,
 	type NamedOutcome,
+	type PanelFoldInfo,
 	type PanelJudge,
-} from "../judge.ts";
-import { noopCollector } from "../outcomes/index.ts";
-import type { Output } from "../output.ts";
+} from "../judge.js";
+import { noopCollector } from "../outcomes/index.js";
+import { isFailedOutput, type Output } from "../output.js";
 
 /**
  * The canonical fold output shape — what `majority`/`all`/`any` emit and what
@@ -54,17 +55,26 @@ export const PANEL_VERDICT_OUTCOME: NamedOutcome = {
  * Tally the members' per-member `pred` results into the canonical verdict
  * shape. `votes`/`agreement`/`tie` are fold-independent (they describe the
  * split); only `pass` differs per sugar fold, supplied by `passWhen`.
+ *
+ * A failed-member sentinel is not a verdict and is not counted. When
+ * `requireAll` is set and the declared member count is known, the panel cannot
+ * pass on a partial set: fewer real verdicts than members ⇒ `pass: false`
+ * (a missing member never reads as an implicit pass for `all`/`majority`).
  */
 function tally(
 	verdicts: readonly Output[],
 	pred: (v: Output) => boolean,
 	passWhen: (pass: number, fail: number) => boolean,
+	info?: PanelFoldInfo,
+	requireAll = false,
 ): PanelVerdict {
-	const n = verdicts.length;
-	const pass = verdicts.reduce((c, v) => c + (pred(v) ? 1 : 0), 0);
+	const present = verdicts.filter((v) => !isFailedOutput(v));
+	const n = present.length;
+	const pass = present.reduce((c, v) => c + (pred(v) ? 1 : 0), 0);
 	const fail = n - pass;
+	const complete = !requireAll || info === undefined || n === info.members;
 	return {
-		pass: passWhen(pass, fail),
+		pass: complete && passWhen(pass, fail),
 		votes: { pass, fail },
 		agreement: n === 0 ? 0 : Math.max(pass, fail) / n,
 		tie: pass === fail,
@@ -79,17 +89,21 @@ function tally(
  * canonical, so pairing it with an explicit `outcome` is a construction error.
  */
 export function majority(pred: (v: Output) => boolean): FoldFn {
-	return brandCanonicalFold("majority", (verdicts) => tally(verdicts, pred, (pass, fail) => pass > fail));
+	return brandCanonicalFold("majority", (verdicts, info) =>
+		tally(verdicts, pred, (pass, fail) => pass > fail, info, true),
+	);
 }
 
 /** Sugar fold — unanimous: the panel passes iff EVERY member passes `pred` (one fail vetoes). */
 export function all(pred: (v: Output) => boolean): FoldFn {
-	return brandCanonicalFold("all", (verdicts) => tally(verdicts, pred, (pass, fail) => pass > 0 && fail === 0));
+	return brandCanonicalFold("all", (verdicts, info) =>
+		tally(verdicts, pred, (pass, fail) => pass > 0 && fail === 0, info, true),
+	);
 }
 
 /** Sugar fold — veto/rescue: the panel passes iff ANY member passes `pred` (one pass carries it). */
 export function any(pred: (v: Output) => boolean): FoldFn {
-	return brandCanonicalFold("any", (verdicts) => tally(verdicts, pred, (pass) => pass > 0));
+	return brandCanonicalFold("any", (verdicts, info) => tally(verdicts, pred, (pass) => pass > 0, info));
 }
 
 /**

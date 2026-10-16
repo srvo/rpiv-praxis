@@ -242,6 +242,16 @@ export const FAIL_FANOUT_ALL_FAILED = (skill: string, failed: number, total: num
 });
 
 /**
+ * A collect-all fanout generation closed with at least one failed slot (a hole)
+ * under the default `onHole: "halt"` — the run halts at the loop stage instead
+ * of handing a fan-in a partial set. `failedLabels` names the holes.
+ */
+export const FAIL_FANOUT_HOLE = (skill: string, failedLabels: readonly string[], total: number): FailureText => ({
+	toast: `rpiv: ${skill} fanout has ${failedLabels.length}/${total} failed unit(s) — stopping workflow`,
+	error: `Fanout hole at stage "${skill}" (${failedLabels.length}/${total} units failed: ${failedLabels.join(", ")}) — resume re-dispatches them`,
+});
+
+/**
  * A loop hit its effective cap under `onCap: "advance"` — soft-stop: warn,
  * land the {type:"loop-cap"} telemetry row, keep the projected result,
  * advance. Deliberately no ERR_ twin (not a failure).

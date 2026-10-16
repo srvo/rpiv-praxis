@@ -249,6 +249,16 @@ export interface FanoutLoop extends LoopCommon {
 	 */
 	haltWhenAllFailed?: boolean;
 	/**
+	 * What a collect-all generation does at CLOSE when ANY filled slot is a failed
+	 * sentinel (a hole). `"halt"` (the default when absent) halts the run
+	 * terminally at the loop stage with a parent-attributed `FAIL_FANOUT_HOLE`
+	 * row — a fan-in never stitches around a missing unit — and a later resume
+	 * re-dispatches the holed units. `"continue"` keeps the old collect-all
+	 * contract: the sentinel stays in its slot and the chain advances. Inert
+	 * under `failFast` (the first failure already halted).
+	 */
+	onHole?: "halt" | "continue";
+	/**
 	 * Re-dispatch a soft-halted collect-all unit (a failed sentinel in its
 	 * slot) up to `retryHaltedUnits` MORE times. One attempt = the unit's
 	 * whole dispatch: unit start, pre-attempt snapshot, session build,

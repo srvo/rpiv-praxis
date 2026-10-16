@@ -8,7 +8,12 @@
 
 export { COMMIT_BASELINE_PROMPT, commitPrompt, REVIEWED_COMMIT_PROMPT } from "./commit-prompt.js";
 export { designOutcome, designParser, designStructure } from "./design.js";
-export { elaborationOutcome, elaborationParser, elaborationStructure } from "./elaboration.js";
+export {
+	elaborationCoverageGaps,
+	elaborationOutcome,
+	elaborationParser,
+	elaborationStructure,
+} from "./elaboration.js";
 export {
 	allDimensionsPass,
 	anchorNitsOnly,

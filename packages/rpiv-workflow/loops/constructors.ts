@@ -139,6 +139,10 @@ export interface FanoutOptions extends LoopOptionsBase {
 	 *  stage instead of advancing into a fan-in over an empty channel. Over-cap
 	 *  advancing generations never qualify; `failFast` wins when both are set. */
 	haltWhenAllFailed?: boolean;
+	/** At generation close, a collect-all generation with ANY failed slot halts
+	 *  the run (`"halt"`, the default) or advances with the sentinel in place
+	 *  (`"continue"`). */
+	onHole?: "halt" | "continue";
 	/** Re-dispatch a soft-halted collect-all unit up to N more times — the
 	 *  whole per-unit dispatch re-runs; only the final attempt's output folds.
 	 *  Integer >= 1 (throws at construction). */
@@ -186,10 +190,18 @@ export function fanout(opts: FanoutOptions): FanoutLoop {
 		...(opts.depArtifactFlag !== undefined ? { depArtifactFlag: checkedDepArtifactFlag(opts.depArtifactFlag) } : {}),
 		...(opts.failFast !== undefined ? { failFast: opts.failFast } : {}),
 		...(opts.haltWhenAllFailed !== undefined ? { haltWhenAllFailed: opts.haltWhenAllFailed } : {}),
+		...(opts.onHole !== undefined ? { onHole: checkedOnHole(opts.onHole) } : {}),
 		...(opts.retryHaltedUnits !== undefined
 			? { retryHaltedUnits: checkedPositiveInt(opts.retryHaltedUnits, "fanout(): retryHaltedUnits") }
 			: {}),
 	};
+}
+
+/** `onHole` is a closed two-value policy — reject anything else at construction. */
+function checkedOnHole(v: unknown): "halt" | "continue" {
+	if (v !== "halt" && v !== "continue")
+		throw new Error(`fanout(): onHole must be "halt" or "continue" (got ${String(v)})`);
+	return v;
 }
 
 /** A blank/whitespace flag would inject a bare ` <path>` with no marker — reject at construction. */

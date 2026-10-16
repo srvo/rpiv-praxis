@@ -85,25 +85,55 @@ const normalized = (cwd: string, path: string): string => {
 	return path.startsWith(prefix) ? path.slice(prefix.length) : path;
 };
 
-/** Arm 1 — the disk listing: `<prefix>*.json` entries NEW since the snapshot
- *  (absent from the listing, or mtime moved), newest first (mtime, tie broken
- *  by name descending — the slug is a timestamp). `undefined` when the prefix
- *  is unknown, the dir is absent, or nothing is new. Never throws. */
+/**
+ * The unit's own verdict-name shape. With the graded artifact's stem AND the
+ * dimension known: `<stem>__<dimension>__` as a filename PREFIX. With only the
+ * dimension known (no source channel / no fs artifact): `__<dimension>__`
+ * anywhere in the name — still per-member, so a panel member never collects a
+ * sibling dimension's verdict. `undefined` when the dimension is unknown (a
+ * non-panel wiring): the loose degradation.
+ */
+interface VerdictName {
+	/** Human-readable glob for the fatal message. */
+	scope: string;
+	/** Regex source for the transcript arm, relative to the verdict dir. */
+	source: string;
+	matches: (fileName: string) => boolean;
+}
+
+const verdictNameOf = (stem: string | undefined, dimension: string | undefined): VerdictName | undefined => {
+	if (dimension === undefined) return undefined;
+	if (stem !== undefined) {
+		const prefix = `${stem}__${dimension}__`;
+		return { scope: `${prefix}*`, source: `${escapeRegex(prefix)}[\\w.-]+`, matches: (n) => n.startsWith(prefix) };
+	}
+	const infix = `__${dimension}__`;
+	return {
+		scope: `*${infix}*`,
+		source: `[\\w.-]*${escapeRegex(infix)}[\\w.-]+`,
+		matches: (n) => n.includes(infix),
+	};
+};
+
+/** Arm 1 — the disk listing: this unit's `*.json` entries (per `name`) NEW since
+ *  the snapshot (absent from the listing, or mtime moved), newest first (mtime,
+ *  tie broken by name descending — the slug is a timestamp). `undefined` when the
+ *  name is unknown, the dir is absent, or nothing is new. Never throws. */
 const collectFromDisk = (
 	ctx: CollectContext<VerdictSnapshot>,
 	dir: string,
-	prefix: string | undefined,
+	name: VerdictName | undefined,
 ): string | undefined => {
-	if (prefix === undefined) return undefined;
+	if (name === undefined) return undefined;
 	try {
 		const abs = join(ctx.cwd, dir);
 		const candidates: Array<{ name: string; mtime: number }> = [];
-		for (const name of readdirSync(abs)) {
-			if (!name.endsWith(".json") || !name.startsWith(prefix)) continue;
-			const mtime = statSync(join(abs, name)).mtimeMs;
-			const known = ctx.snapshot?.get(name);
+		for (const entry of readdirSync(abs)) {
+			if (!entry.endsWith(".json") || !name.matches(entry)) continue;
+			const mtime = statSync(join(abs, entry)).mtimeMs;
+			const known = ctx.snapshot?.get(entry);
 			if (known !== undefined && mtime <= known) continue; // prior round — listed at snapshot
-			candidates.push({ name, mtime });
+			candidates.push({ name: entry, mtime });
 		}
 		if (candidates.length === 0) return undefined;
 		candidates.sort((a, b) => (a.mtime !== b.mtime ? b.mtime - a.mtime : a.name < b.name ? 1 : -1));
@@ -131,9 +161,9 @@ const writtenSinceSnapshot = (ctx: CollectContext<VerdictSnapshot>, raw: unknown
 /** Arm 2's pattern: tightened to the determined name when both segments are
  *  known, else today's loose directory pattern (the `directoryPathCollector`
  *  idiom over the verdict dir). */
-const transcriptPattern = (dir: string, determined: string | undefined): RegExp =>
-	determined !== undefined
-		? new RegExp(String.raw`${escapeRegex(dir)}/${escapeRegex(determined)}[\w.-]+\.json`, "g")
+const transcriptPattern = (dir: string, name: VerdictName | undefined): RegExp =>
+	name !== undefined
+		? new RegExp(String.raw`${escapeRegex(dir)}/${name.source}\.json`, "g")
 		: new RegExp(String.raw`${escapeRegex(dir)}/[\w.-]+\.json`, "g");
 
 /** Arm 3 — write tool-calls whose `input.path` sits under the verdict dir
@@ -141,7 +171,7 @@ const transcriptPattern = (dir: string, determined: string | undefined): RegExp 
 const lastWriteUnderDir = async (
 	ctx: CollectContext<VerdictSnapshot>,
 	dir: string,
-	determined: string | undefined,
+	name: VerdictName | undefined,
 ): Promise<Artifact | undefined> => {
 	const writes = toolCallCollector({
 		match: (tc) => {
@@ -150,7 +180,7 @@ const lastWriteUnderDir = async (
 			if (typeof raw !== "string") return false;
 			const p = normalized(ctx.cwd, raw);
 			if (!p.includes(`${dir}/`)) return false;
-			return determined === undefined || basename(p).startsWith(determined);
+			return name === undefined || name.matches(basename(p));
 		},
 		toArtifact: (tc) => {
 			const raw = tc.input.path;
@@ -182,22 +212,25 @@ export function verdictCollector(opts: VerdictCollectorOpts): ArtifactCollector<
 		collect: async (ctx) => {
 			const stem = gradedBasename(ctx.state, sourceChannel);
 			const dimension = ctx.unitLabel;
-			const determined = stem !== undefined && dimension !== undefined ? `${stem}__${dimension}__` : undefined;
+			const name = verdictNameOf(stem, dimension);
 			// Arm 1: disk.
-			const rel = collectFromDisk(ctx, dir, determined);
+			const rel = collectFromDisk(ctx, dir, name);
 			if (rel !== undefined) return { kind: "ok", artifacts: [{ handle: fsHandle(rel), role: "primary" }] };
 			// Arm 2: transcript text (pattern tightened when determined; tool-args
 			// narrowed to write/edit calls on paths written since the snapshot).
+			// A text mention of a verdict listed at snapshot (a prior round) is not a
+			// collection either — the freshness proof applies to both surfaces.
 			const scanned = await transcriptPathCollector({
-				pattern: transcriptPattern(dir, determined),
+				pattern: transcriptPattern(dir, name),
 				match: (tc) => isWriteTool(tc) && writtenSinceSnapshot(ctx, tc.input.path),
+				isFresh: (hit) => writtenSinceSnapshot(ctx, hit),
 			}).collect(ctx);
 			if (scanned.kind === "ok" && scanned.artifacts.length > 0) return scanned;
 			// Arm 3: write tool-call arguments.
-			const written = await lastWriteUnderDir(ctx, dir, determined);
+			const written = await lastWriteUnderDir(ctx, dir, name);
 			if (written !== undefined) return { kind: "ok", artifacts: [written] };
 			// All three missed — ONE composite fatal naming every attempted surface.
-			const scope = determined !== undefined ? `${dir}/${determined}*.json` : `${dir}/*.json`;
+			const scope = name !== undefined ? `${dir}/${name.scope}.json` : `${dir}/*.json`;
 			return {
 				kind: "fatal",
 				message: `${ctx.skill}: no verdict collected — ${scope} new since snapshot, assistant text, and write tool-call arguments all missed`,

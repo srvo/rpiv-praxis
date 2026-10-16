@@ -484,6 +484,30 @@ describe("sugar folds (majority / all / any)", () => {
 		expect((any(isOk)([verdict(false), verdict(false)]) as { pass: boolean }).pass).toBe(false);
 	});
 
+	it("all/majority cannot pass on a partial verdict set — n must equal the declared member count", () => {
+		const three = { members: 3 };
+		expect((all(isOk)([verdict(true), verdict(true)], three) as { pass: boolean }).pass).toBe(false);
+		expect((majority(isOk)([verdict(true), verdict(true)], three) as { pass: boolean }).pass).toBe(false);
+		expect((all(isOk)([verdict(true), verdict(true), verdict(true)], three) as { pass: boolean }).pass).toBe(true);
+		expect((majority(isOk)([verdict(true), verdict(true), verdict(false)], three) as { pass: boolean }).pass).toBe(
+			true,
+		);
+	});
+
+	it("a failed-member sentinel is not a verdict: it is not counted and blocks all/majority", () => {
+		const sentinel = { kind: "failed", data: { reason: "boom" } } as unknown as Output;
+		const v = all(isOk)([verdict(true), verdict(true), sentinel], { members: 3 }) as {
+			pass: boolean;
+			votes: { pass: number; fail: number };
+		};
+		expect(v.pass).toBe(false);
+		expect(v.votes).toEqual({ pass: 2, fail: 0 });
+	});
+
+	it("any still passes on one pass regardless of missing members", () => {
+		expect((any(isOk)([verdict(true)], { members: 3 }) as { pass: boolean }).pass).toBe(true);
+	});
+
 	it("brands sugar folds canonical (and leaves raw folds unbranded)", () => {
 		expect(marksCanonicalFold(majority(isOk))).toBe(true);
 		expect(marksCanonicalFold(all(isOk))).toBe(true);

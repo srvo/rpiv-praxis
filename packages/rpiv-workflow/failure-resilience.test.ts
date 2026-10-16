@@ -89,7 +89,7 @@ const incidentWorkflow = () =>
 					},
 					parser: { parse: () => ({ kind: "ok", payload: { kind: "impl-out", data: {} } }) },
 				},
-				loop: fanout({ units: incidentUnits, concurrency: 1, result: "last" }),
+				loop: fanout({ units: incidentUnits, concurrency: 1, result: "last", onHole: "continue" }),
 			}),
 			// schema-validated produces stage: invalid payload ⇒ retry ⇒ validation-retry gate.
 			validate: produces({

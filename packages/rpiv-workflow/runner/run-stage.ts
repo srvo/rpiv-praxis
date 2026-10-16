@@ -32,6 +32,7 @@ import { buildLoopEntry, freshCursor, type LoopDeps, type LoopEntry } from "../l
 import { ensureUnitDeps } from "../loop-waves.ts";
 import {
 	FAIL_FANOUT_ALL_FAILED,
+	FAIL_FANOUT_HOLE,
 	FAIL_LOOP_CAP_HALT,
 	FAIL_VALIDATE_GATE_SKIPPED,
 	FAIL_VERIFY_FAILED,
@@ -526,6 +527,7 @@ export function buildLoopDeps(): LoopDeps {
 		captureSnapshot: (ctx, name, def, i, r) => captureStageSnapshot(ctx, name, def, i, r),
 		haltLoop,
 		haltLoopWhenAllFailed,
+		haltLoopOnHole,
 		// Mid-flight run abort at the loop seam → FAIL_WORKFLOW_ABORTED.
 		recordAborted: (hostCtx, name, run) => recordAbortedAtSeam(hostCtx, name, run).then(() => undefined),
 		// Unexpected worker rejection → terminal-failure row, no re-throw. The
@@ -571,6 +573,23 @@ export async function haltLoopWhenAllFailed(
 	total: number,
 ): Promise<void> {
 	await haltChain(hostCtx, run, e.name, e.name, failedArgs(FAIL_FANOUT_ALL_FAILED(e.skill, failed, total)));
+}
+
+/**
+ * Terminal failure when a collect-all fanout generation closes with ANY failed
+ * slot under the default `onHole: "halt"`. Same parent-attributed, sessionless
+ * recording shape as `haltLoopWhenAllFailed`, so the resume fold keeps the
+ * generation open; resume then re-dispatches the holed units (their collected
+ * rows do not fill a slot under the halt policy).
+ */
+export async function haltLoopOnHole(
+	hostCtx: WorkflowHostContext,
+	run: RunContext,
+	e: Pick<LoopEntry, "name" | "skill">,
+	failedLabels: readonly string[],
+	total: number,
+): Promise<void> {
+	await haltChain(hostCtx, run, e.name, e.name, failedArgs(FAIL_FANOUT_HOLE(e.skill, failedLabels, total)));
 }
 
 /** Runs whose snapshot-failure warning already fired — one notify per run, not per stage/unit. */

@@ -37,6 +37,7 @@ import {
 	advanceCursor,
 	foldFanoutCompletion,
 	freshCursor,
+	isHaltOnHole,
 	judgeStageDef,
 	type LoopCursor,
 	sequentialStrategyOf,
@@ -476,7 +477,10 @@ function foldFanoutRow(acc: FoldAcc, gen: OpenGeneration, row: WorkflowStage): v
 		// later prompts — the re-dispatch's included — carry it as the live run's do.
 		pushFailureMemo(acc.state, { stage: gen.parent, unitId: row.unitId }, row.errMsg ?? "");
 		const budget = gen.loop.kind === "fanout" ? (gen.loop.retryHaltedUnits ?? 0) : 0;
-		if (!(row.attemptOrdinal !== undefined && row.attemptOrdinal <= budget)) {
+		// Under the default `onHole: "halt"` a hole never fills its slot on resume:
+		// the generation halted (or died) because of it, so resume re-dispatches it.
+		const underBudget = row.attemptOrdinal !== undefined && row.attemptOrdinal <= budget;
+		if (!underBudget && !isHaltOnHole(gen.loop)) {
 			const sentinel = rebuildCollectedSentinel(row, acc.runId);
 			foldFanoutCompletion(acc.state, gen.cursor, gen.def, gen.parent, row.unitIndex!, units.length, sentinel);
 		}
