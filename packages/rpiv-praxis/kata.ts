@@ -77,6 +77,7 @@ export function ticketBody(park: Park, answerHint: string): string {
 		.join("\n\n");
 	return [
 		`rpiv workflow \`${park.workflow ?? "?"}\` parked at stage \`${park.stage ?? "?"}\` (run ${park.runId}, question #${park.n}).`,
+		...(park.context ? [`Context (what the stage wrote before asking):\n\n${park.context}`] : []),
 		qs,
 		`Answer with:\n\n    ${answerHint}`,
 	].join("\n\n");

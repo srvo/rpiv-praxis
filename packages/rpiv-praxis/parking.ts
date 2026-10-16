@@ -73,6 +73,7 @@ export function createRunParking(opts: {
 				sessionId: info.sessionId,
 				sessionFile: info.sessionFile,
 				questions: toQuestions(info.questions),
+				...(info.context ? { context: info.context } : {}),
 			});
 			const ref = opts.kata?.file(park, `rpiv-wf answer ${runId} ${park.n} <choice>`);
 			if (ref) park = updatePark(opts.cwd, runId, park.n, { kata: ref }) ?? park;
@@ -104,6 +105,13 @@ export function createRunParking(opts: {
 	parking.noteUsage = (sessionId, usage) => {
 		const park = recorded.find((p) => p.sessionId === sessionId);
 		if (park && runId) updatePark(opts.cwd, runId, park.n, { usage: usage as never });
+	};
+
+	parking.noteContext = (sessionId, context) => {
+		const park = recorded.find((p) => p.sessionId === sessionId);
+		if (!park || !runId || !context || context === park.context) return;
+		const updated = updatePark(opts.cwd, runId, park.n, { context });
+		if (updated) recorded[recorded.indexOf(park)] = updated;
 	};
 
 	const lifecycle: LifecycleListeners = {

@@ -27,6 +27,7 @@ import type {
 import { type SkillCatalog, translateSkillPrompt } from "./skills.js";
 import {
 	assistantEntry,
+	assistantTextSince,
 	locateSessionFile,
 	readSessionBranch,
 	stampStop,
@@ -131,7 +132,15 @@ export interface TurnUsage {
  */
 export interface Parking {
 	/** `stage` is the engine's name for the stage that asked (undefined when the engine gave none). */
-	park(info: { prompt: string; sessionId: string; sessionFile?: string; questions: unknown; stage?: string }): void;
+	park(info: {
+		prompt: string;
+		sessionId: string;
+		sessionFile?: string;
+		questions: unknown;
+		stage?: string;
+		/** The assistant text of the asking turn: what the question refers to. */
+		context?: string;
+	}): void;
 	answerFor(prompt: string):
 		| {
 				sessionId: string;
@@ -142,6 +151,11 @@ export interface Parking {
 				usage?: SessionUsage;
 		  }
 		| undefined;
+	/**
+	 * Refresh a park's context once its turn has ended: the text written before
+	 * the question may reach the branch after the permission callback fired.
+	 */
+	noteContext?(sessionId: string, context: string): void;
 	/** Record a parked session's cumulative usage once its interrupted turn reports it. */
 	noteUsage?(sessionId: string, usage: SessionUsage): void;
 	/** Append an audit row (an auto-accepted question or checkpoint) to the run log. */
@@ -357,6 +371,8 @@ class ClaudeChildSession implements WorkflowSessionContext {
 	private readonly branch: BranchEntry[] = [];
 	private queue: Promise<void> = Promise.resolve();
 	private isParked = false;
+	/** Branch index where the current turn began: a park's context is the text written since. */
+	private turnStart = 0;
 	/** A person's answer reached this session (a resumed park): a checkpoint may complete. */
 	answered = false;
 
@@ -475,7 +491,9 @@ class ClaudeChildSession implements WorkflowSessionContext {
 			}
 		}
 		this.isParked = true;
+		const context = assistantTextSince(this.branch, this.turnStart);
 		this.opts.parking.park({
+			...(context ? { context } : {}),
 			prompt: this.stagePrompt,
 			sessionId: this.sessionId,
 			sessionFile: this.sessionManager.getSessionFile(),
@@ -508,6 +526,7 @@ class ClaudeChildSession implements WorkflowSessionContext {
 
 	private async turn(prompt: string): Promise<void> {
 		const start = this.branch.length;
+		this.turnStart = start;
 		this.branch.push(userEntry(prompt));
 		if (this.abort.signal.aborted || this.opts.halt?.aborted) {
 			stampStop(this.branch, "aborted", start);
@@ -542,6 +561,8 @@ class ClaudeChildSession implements WorkflowSessionContext {
 						this.ui.notify(`stage turn ended: ${msg.subtype}`, "warning");
 				}
 			}
+			if (this.isParked && this.sessionId)
+				this.opts.parking?.noteContext?.(this.sessionId, assistantTextSince(this.branch, start));
 			if (this.abort.signal.aborted || this.isParked) stampStop(this.branch, "aborted", start);
 			else this.refuseUnansweredCheckpoint();
 		} catch (err) {

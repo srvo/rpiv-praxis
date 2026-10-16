@@ -112,4 +112,9 @@ describe("kata tickets", () => {
 		expect(body).toContain("1. Accept — go");
 		expect(body).toContain("2. Adjust");
 	});
+
+	it("carries the park's context into the ticket body (kata r923)", () => {
+		const body = ticketBody({ ...park, context: "the 5 cross-slice issues" }, "rpiv-wf answer r1 1 <choice>");
+		expect(body).toContain("the 5 cross-slice issues");
+	});
 });

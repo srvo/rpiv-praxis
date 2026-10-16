@@ -39,6 +39,8 @@ export interface Park {
 	sessionId: string;
 	sessionFile?: string;
 	questions: ParkedQuestion[];
+	/** What the stage wrote before it asked: the text its question refers to ("the issues above"). */
+	context?: string;
 	status: "waiting" | "answered" | "resumed";
 	askedAt: string;
 	answer?: string;
@@ -147,6 +149,10 @@ export function answerMessage(park: Park): string {
 export function formatPark(p: Park): string {
 	const where = [p.workflow, p.stage].filter(Boolean).join(" › ");
 	const lines = [`${p.runId} #${p.n}  ${where}  (${p.status}, asked ${p.askedAt})${p.kata ? `  kata ${p.kata}` : ""}`];
+	if (p.context) {
+		lines.push("  context:");
+		for (const l of p.context.split("\n")) lines.push(l ? `    ${l}` : "");
+	}
 	for (const q of p.questions) {
 		lines.push(`  ${q.header ? `[${q.header}] ` : ""}${q.question}`);
 		q.options.forEach((o, i) => {

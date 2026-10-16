@@ -35,6 +35,31 @@ export function stopReasonForResult(result: { subtype: string; stop_reason?: str
 	return "error";
 }
 
+/** The longest stretch of assistant text a park keeps as its context (the tail is kept). */
+export const PARK_CONTEXT_MAX = 4000;
+
+/**
+ * The assistant text written in `branch` from `fromIndex` on, up to the turn's
+ * LAST AskUserQuestion call: what a question asked in that turn refers to ("the
+ * 5 cross-slice issues above"). Text written after the question (the model
+ * acknowledging the park) is not context. Keeps the last `max` characters,
+ * marked with a leading ellipsis when cut.
+ */
+export function assistantTextSince(branch: readonly BranchEntry[], fromIndex: number, max = PARK_CONTEXT_MAX): string {
+	const texts: string[] = [];
+	let beforeAsk: string[] | undefined;
+	for (const entry of branch.slice(fromIndex)) {
+		const m = entry.message;
+		if (m?.role !== "assistant") continue;
+		for (const part of m.content as Array<{ type: string; text?: unknown; name?: unknown }>) {
+			if (part.type === "text" && typeof part.text === "string" && part.text.trim()) texts.push(part.text.trim());
+			else if (part.type === "tool_use" && part.name === "AskUserQuestion") beforeAsk = [...texts];
+		}
+	}
+	const text = (beforeAsk ?? texts).join("\n\n");
+	return text.length > max ? `…${text.slice(text.length - max)}` : text;
+}
+
 /** Stamp `reason` on the last assistant entry, adding an empty one when the turn produced none. */
 export function stampStop(branch: BranchEntry[], reason: StopReason, fromIndex: number): void {
 	for (let i = branch.length - 1; i >= fromIndex; i--) {

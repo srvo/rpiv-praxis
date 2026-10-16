@@ -323,6 +323,32 @@ describe("ClaudeWorkflowHost — parking", () => {
 		expect(lastAssistant(branch).stopReason).toBe("aborted");
 	});
 
+	it("stores the text written before the question as the park's context (kata r923)", async () => {
+		const parking = parkingStub({ noteContext: vi.fn() });
+		const asking = {
+			type: "assistant",
+			session_id: "s1",
+			parent_tool_use_id: null,
+			message: { content: [{ type: "tool_use", name: "AskUserQuestion", input: ask }] },
+		};
+		const sdk = fakeSdk([
+			(call) =>
+				(async function* () {
+					yield init("s1");
+					yield say("s1", "Found 5 cross-slice issues:\n1. slice 2 and 4 both own the schema");
+					yield asking;
+					await call.options.canUseTool("AskUserQuestion", ask, { signal: new AbortController().signal });
+					yield say("s1", "Stopping as instructed.");
+					yield result("s1", "error_during_execution");
+				})(),
+		]);
+		await run(host(sdk.deps, { parking }).h);
+		const context = "Found 5 cross-slice issues:\n1. slice 2 and 4 both own the schema";
+		expect(parking.park).toHaveBeenCalledWith(expect.objectContaining({ context }));
+		// The turn-end refresh keeps the text before the question, not the post-park acknowledgement.
+		expect(parking.noteContext).toHaveBeenCalledWith("s1", context);
+	});
+
 	it("names the stage that actually asked in the park (kata 79yy)", async () => {
 		const parking = parkingStub();
 		const sdk = fakeSdk([

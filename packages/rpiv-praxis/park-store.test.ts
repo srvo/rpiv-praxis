@@ -93,6 +93,12 @@ describe("answers", () => {
 		expect(msg).toContain("Answer: Blue");
 	});
 
+	it("prints the park's context in the inbox entry (kata r923)", () => {
+		const text = formatPark({ ...park, context: "Issues:\n1. schema has two owners" });
+		expect(text).toContain("  context:\n    Issues:\n    1. schema has two owners");
+		expect(text.indexOf("context:")).toBeLessThan(text.indexOf("Red or blue?"));
+	});
+
 	it("formats an inbox entry with options, answer and ticket", () => {
 		const text = formatPark({ ...park, answer: "Blue", kata: "ab12" });
 		expect(text).toContain("r1 #1  wf › pick");

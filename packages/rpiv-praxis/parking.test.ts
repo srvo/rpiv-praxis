@@ -29,6 +29,19 @@ describe("createRunParking", () => {
 		expect(vi.mocked(kata.file).mock.calls[0]![1]).toBe("rpiv-wf answer r1 1 <choice>");
 	});
 
+	it("stores the context with the park and refreshes it from the turn's end (kata r923)", () => {
+		const cwd = project();
+		const kata: Kata = { file: vi.fn(() => "ab12"), close: vi.fn() };
+		const rp = createRunParking({ cwd, kata, stop: vi.fn(), notify: () => {} });
+		rp.lifecycle.onWorkflowStart!(lifecycleCtx);
+		rp.parking.park({ prompt: "/skill:d", sessionId: "s1", questions: [ask], context: "the 5 issues" });
+		expect(readParks(cwd, "r1")[0]!.context).toBe("the 5 issues");
+		expect(vi.mocked(kata.file).mock.calls[0]![0].context).toBe("the 5 issues");
+		rp.parking.noteContext!("other", "not mine");
+		rp.parking.noteContext!("s1", "the 5 issues, in full");
+		expect(readParks(cwd, "r1")[0]!.context).toBe("the 5 issues, in full");
+	});
+
 	it("records the stage the host says asked, not whichever started last (kata 79yy)", () => {
 		const cwd = project();
 		const rp = createRunParking({ cwd, stop: vi.fn(), notify: () => {} });
