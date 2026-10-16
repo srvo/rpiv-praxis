@@ -14,10 +14,15 @@ const SLICE_HEADING_RE = /^## Slice (\d+):/gm;
 
 /**
  * Parse a slice map's `slices:` frontmatter into `{ n, title }` records,
- * derive-checked against the body's `## Slice N:` headings and the required
- * `slice_count` scalar — the slices twin of `planPhaseRecords`. A mismatch means
- * the producer's rebuild was skipped or the array went stale; throw rather than
- * dispatch a wrong unit list.
+ * derive-checked against the body's `## Slice N:` headings. A mismatch between
+ * those two is a real conflict (the array went stale against the body): throw
+ * rather than dispatch a wrong unit list.
+ *
+ * `slice_count` is NOT checked here. It is a model-written restatement of a
+ * number the headings and the array already agree on, so a drift (run d4d4:
+ * `slice_count: 13` over 14 headings and 14 entries) carries no information and
+ * must not stop the run (kata f1h7). Consumers derive the count from the
+ * array; see `derivedSliceCount`.
  */
 const sliceRecords = (content: string, who: string, path: string): readonly PhaseRecord[] => {
 	const { frontmatter } = parseFrontmatter(content);
@@ -30,13 +35,6 @@ const sliceRecords = (content: string, who: string, path: string): readonly Phas
 			who,
 			`${who}: slice map ${path} has mismatched slices`,
 			`${who}: slice map ${path} frontmatter slices (${slices.length}) ≠ '## Slice N:' headings (${headingCount}) — the derived array is stale against the body`,
-		);
-	}
-	if ((slices.length > 0 || fm.slice_count !== undefined) && fm.slice_count !== slices.length) {
-		throw haltPreflight(
-			who,
-			`${who}: slice map ${path} has invalid slice_count`,
-			`${who}: slice map ${path} frontmatter slice_count (${String(fm.slice_count)}) ≠ slices length (${slices.length}) — rebuild slice_count from the '## Slice N:' headings`,
 		);
 	}
 	return slices.map((entry, index) => {

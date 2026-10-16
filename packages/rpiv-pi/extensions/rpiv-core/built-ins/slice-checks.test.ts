@@ -97,6 +97,22 @@ describe("build slice-check (deterministic floor)", () => {
 		expect(String(data.feedback)).toMatch(/c2/);
 	});
 
+	// kata f1h7 (run d4d4): a model-written slice_count that drifts from headings
+	// and array, which agree with each other, is derivable noise, not a conflict.
+	it("does not throw when slice_count drifts but headings and slices agree", () => {
+		const body = map({
+			count: 2,
+			sliceLines: "  - { n: 1, title: A, deps: [] }\n  - { n: 2, title: B, deps: [1] }\n",
+		}).replace("slice_count: 2", "slice_count: 1");
+		const data = runOn(write(".rpiv/artifacts/slices/drift.md", body));
+		expect(data.pass).toBe(true);
+	});
+
+	it("still throws when the slices array disagrees with the '## Slice N:' headings", () => {
+		const body = `---\nstatus: ready\nslice_count: 1\nslices:\n  - { n: 1, title: A, deps: [] }\n---\n## Slice 1: A\n## Slice 2: B\n`;
+		expect(() => runOn(write(".rpiv/artifacts/slices/stale.md", body))).toThrow(/headings/);
+	});
+
 	it("is a no-op on coverage when the first cut froze no units", () => {
 		const rel = ".rpiv/artifacts/slices/nocov.md";
 		const m = write(rel, map({ count: 1, sliceLines: "  - { n: 1, title: A, deps: [] }\n" }));

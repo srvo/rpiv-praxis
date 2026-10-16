@@ -98,6 +98,18 @@ export const channelNumber = (state: RunView, name: string, field: string): numb
 	return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 };
 
+/**
+ * A slice map's slice count, derived from its frontmatter: the `slices:` array
+ * length when the array is present (it is derive-checked against the headings
+ * by `sliceRecords` in slices.ts), else the `slice_count` scalar. The scalar is a fallback
+ * only, never an authority over the array (kata f1h7).
+ */
+export const derivedSliceCount = (data: Record<string, unknown> | undefined): number | undefined => {
+	if (Array.isArray(data?.slices)) return data.slices.length;
+	const v = data?.slice_count;
+	return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+};
+
 /** Repo-relative path of the latest fs artifact on `name` (undefined if none). */
 export const latestArtifactPath = (state: RunView, name: string): string | undefined => {
 	const a = latestFsArtifact(state, name);

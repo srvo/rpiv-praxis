@@ -57,6 +57,16 @@ describe("gateTier", () => {
 		expect(gateTier(view(counts(3, 3)), "v")).toBe("standard");
 	});
 
+	// kata f1h7: the tier reads the derived slices-array length, not a drifted slice_count.
+	it("derives the slice count from the slices array over a drifted slice_count", () => {
+		const five = Array.from({ length: 5 }, (_, i) => ({ n: i + 1 }));
+		const drifted = view({
+			slices: [dataRow({ slice_count: 1, slices: five })],
+			plans: [dataRow({ phase_count: 2 })],
+		});
+		expect(gateTier(drifted, "v")).toBe("strict");
+	});
+
 	it("a missing signal never yields light — ambiguity resolves toward scrutiny", () => {
 		expect(gateTier(view(counts(undefined, 1)), "v")).toBe("standard");
 		expect(gateTier(view(counts(1, undefined)), "v")).toBe("standard");

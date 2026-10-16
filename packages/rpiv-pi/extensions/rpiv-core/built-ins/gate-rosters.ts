@@ -9,8 +9,15 @@
  * that consult it stay resume-safe.
  */
 import type { Output, RunView } from "@juicesharp/rpiv-workflow/registration";
-import { FILE_LINE_CITATION_RE } from "./shared.ts";
-import { anchorNitsOnly, channelNumber, latestChannelData, RISK_DIMENSION, SHIP_DIMENSIONS } from "./verdict-core.ts";
+import { FILE_LINE_CITATION_RE } from "./shared.js";
+import {
+	anchorNitsOnly,
+	channelNumber,
+	derivedSliceCount,
+	latestChannelData,
+	RISK_DIMENSION,
+	SHIP_DIMENSIONS,
+} from "./verdict-core.js";
 
 /**
  * Gate scrutiny tier, derived ONLY from signals already replayed by the resume
@@ -43,7 +50,8 @@ const TIER_STRICT_MIN_PHASES = 6;
 const LIGHT_ROSTER: ReadonlySet<string> = new Set(["correctness", "completeness"]);
 
 export const gateTier = (state: RunView, verdictChannel: string): GateTier => {
-	const slices = channelNumber(state, "slices", "slice_count");
+	// Derived from the `slices:` array, not the model-written `slice_count` (kata f1h7).
+	const slices = derivedSliceCount(latestChannelData(state, "slices"));
 	const phases = channelNumber(state, "plans", "phase_count");
 	const severities = new Set<string>();
 	for (const o of state.named[verdictChannel] ?? []) {
