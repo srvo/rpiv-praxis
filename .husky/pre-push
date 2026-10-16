@@ -1,5 +1,19 @@
 #!/bin/sh
 
+# Git exports its hook environment — GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE and
+# friends — into every hook it runs. From a LINKED WORKTREE that GIT_DIR points
+# at the worktree's private gitdir, so a test fixture that does `git init` +
+# `git commit` in its own scratch directory commits into the REAL repository
+# instead, moving the branch being pushed to fixture commits (`seed`/`init`/
+# `baseline`). Observed 2026-10-16 while pushing this repo from a worktree: the
+# pushed branch tip was replaced, and the suite failed 58-66 tests across the
+# git-dependent files that discovered the wrong repo.
+#
+# Scrub the hook environment so the suite runs outside git's hook context.
+# (Guarded by packages/rpiv-praxis/pre-push-hook.test.ts; kata h7sc.)
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+	GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_PREFIX
+
 echo "Running test suite with coverage before push..."
 npm run coverage
 if [ $? -ne 0 ]; then
