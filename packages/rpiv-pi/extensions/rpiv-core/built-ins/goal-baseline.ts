@@ -291,6 +291,7 @@ export {
 	gitDirtyEntries,
 	goalBaselinePath,
 	readGoalBaseline,
+	SCOPE_BOOKKEEPING_DIRS,
 	scopeExcess,
 	VALIDATE_GOAL_PROMPT,
 };

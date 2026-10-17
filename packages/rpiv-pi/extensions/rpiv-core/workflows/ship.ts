@@ -10,7 +10,6 @@ import {
 	defineRoute,
 	defineWorkflow,
 	type EdgeFn,
-	gitCommitOutcome,
 	match,
 	type PromptFn,
 	produces,
@@ -19,6 +18,7 @@ import {
 } from "@juicesharp/rpiv-workflow/registration";
 import {
 	allDimensionsPass,
+	BASELINE_COMMIT_OUTCOME,
 	COMMIT_BASELINE_PROMPT,
 	captureGoal,
 	freshVerdicts,
@@ -277,7 +277,7 @@ const shipWorkflow = defineWorkflow({
 		// arm acts only on the report's structured handles, and its own progress
 		// gate stops a no-op remediation instead of re-validating an unchanged tree.
 		"validate-fix": acts({ skill: "remediate", reads: ["plans", "validation"], outcome: remediationOutcome }),
-		commit: acts({ prompt: COMMIT_BASELINE_PROMPT, outcome: gitCommitOutcome }),
+		commit: acts({ prompt: COMMIT_BASELINE_PROMPT, outcome: BASELINE_COMMIT_OUTCOME }),
 	},
 	edges: {
 		goal: "research",

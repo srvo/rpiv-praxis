@@ -34,7 +34,6 @@ import {
 	directoryPathCollector,
 	type EdgeFn,
 	fanout,
-	gitCommitOutcome,
 	handleToString,
 	jsonBodyParser,
 	type LoopDef,
@@ -49,7 +48,7 @@ import {
 	type Workflow,
 } from "@juicesharp/rpiv-workflow/registration";
 import { rpivBucketOutcome } from "../artifact-collector.js";
-import { commitPrompt, latestFsArtifact } from "../built-ins/index.js";
+import { BASELINE_COMMIT_OUTCOME, commitPrompt, latestFsArtifact } from "../built-ins/index.js";
 import { lessonsBlock, recordLessons } from "./lessons.js";
 import { captureGoalKeepingWip, wipIntact, wipNotice } from "./wip-guard.js";
 
@@ -558,7 +557,7 @@ export function defineUnitGraph(g: UnitGraphSpec): Workflow {
 		const lastUnitPassed = (state: RunView): boolean => gateRecords(state, last).at(-1)?.decision === "pass";
 		stages.commit = acts({
 			prompt: commitPrompt({ baseline: true, reviewed: lastUnitPassed }),
-			outcome: gitCommitOutcome,
+			outcome: BASELINE_COMMIT_OUTCOME,
 		});
 		edges.commit = "learn";
 	}

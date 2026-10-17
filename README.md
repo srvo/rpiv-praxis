@@ -104,6 +104,8 @@ This fork:
 - **Guardrails when it doesn't ask:** never stage `.rpiv/artifacts/` or `.rpiv/workflows/runs/`, even in repos that do not gitignore them; stage only paths the baseline or the review's scope ties to this run; if nothing can be tied, do not commit and end with a `NOT COMMITTED:` line.
 - Interactive Pi runs that reach a gated commit also skip the confirmation now. That is the intended trade: the change was already gated.
 
+- **A commit stage that commits nothing fails.** When HEAD did not move and the run's scope still has uncommitted files (dirty paths minus `.rpiv/`, `thoughts/` and, for `build`/`ship`/`meta`, the run-start baseline), the stage halts with `commit stage made no commit; N files uncommitted …; last error: <the skill's NOT COMMITTED: line>` instead of recording the base sha as a commit. Resuming re-runs it. A git hook that rejects the commit is reported on that line; the skill never bypasses one. An empty scope is still an honest no-op.
+
 Verified live (Claude Code, 9 runs): with evidence or baseline, only the run's file was committed; with neither, nothing was committed and the `NOT COMMITTED:` line appeared. Run logs and a pre-existing unrelated file were never staged.
 
 ### 5. Human in the loop without a live session: parked questions
@@ -136,7 +138,7 @@ Verified live: a Claude Code agent given the server ran a step in two projects i
 This fork tracks [juicesharp/rpiv-mono](https://github.com/juicesharp/rpiv-mono) and should keep doing so. The rules:
 
 - **New work goes in `packages/rpiv-praxis`**, built on upstream's public APIs (`runWorkflow`, `resumeWorkflow`, `registerBuiltIns`, lifecycle listeners, the executor port). Steps, the MCP server, parking and the Claude host touch nothing in `rpiv-workflow`.
-- **The footprint inside upstream's packages is small and listed here.** As of this writing: nothing in `rpiv-workflow`; in `rpiv-pi`, the host exporter (`scripts/export-hosts.ts`, generated `hosts/`), the Pi-free seams (`frontmatter.ts` `parseFrontmatter`, `skill-contracts-core.ts`, `module-errors.ts`, re-exported from their old homes), and the reviewed-commit change (`built-ins/commit-prompt.ts`, `skills/commit/SKILL.md`, the commit stages in `vet`/`polish`/`meta`). Check it any time with `git diff --stat upstream/main...HEAD -- packages/rpiv-pi packages/rpiv-workflow`.
+- **The footprint inside upstream's packages is small and listed here.** As of this writing: nothing in `rpiv-workflow`; in `rpiv-pi`, the host exporter (`scripts/export-hosts.ts`, generated `hosts/`), the Pi-free seams (`frontmatter.ts` `parseFrontmatter`, `skill-contracts-core.ts`, `module-errors.ts`, re-exported from their old homes), the reviewed-commit change (`built-ins/commit-prompt.ts`, `skills/commit/SKILL.md`, the commit stages in `vet`/`polish`/`meta`), the no-op commit guard (`built-ins/commit-outcome.ts`, wired into every built-in commit stage), and the re-quarantine halt in `built-ins/scope-checks.ts`. Check it any time with `git diff --stat upstream/main...HEAD -- packages/rpiv-pi packages/rpiv-workflow`.
 - **Syncing:**
 
   ```sh
@@ -151,7 +153,6 @@ This fork tracks [juicesharp/rpiv-mono](https://github.com/juicesharp/rpiv-mono)
 ### Not changed (known gaps)
 
 - Stages that ask a person — `research` (write-gate), `slice` (decomposition approval), `design-review` (the human design checkpoint in `build`), `blueprint` (several approvals), `architecture-review` (human triage), `implement` (code/plan mismatch) — now **park** under `rpiv-praxis` instead of failing. Under Pi without a UI they still fail loudly (a missing artifact halts the stage); Pi's in-session lane parking is unchanged.
-- `gitCommitOutcome` still treats a no-op commit as success. The `NOT COMMITTED:` line makes it visible in the transcript but not in the run result.
 - Upstream issues and releases stay at juicesharp/rpiv-mono; this fork does not publish to npm.
 
 ## Other harnesses: Claude Code, Codex, OpenCode, Factory

@@ -79,6 +79,7 @@ node "${SKILL_DIR}/../_shared/git-changes.mjs" --baseline <path>
 4. **Execute upon confirmation:**
    - Use `git add` with specific files (never use `-A` or `.`) — and stage **only** files from the `---status---` block. Any path under `---pre-existing (do NOT commit …)---` is out of scope: leave it dirty, never stage it.
    - Create commits with your planned messages
+   - **If `git commit` fails (a pre-commit or commit-msg hook rejects it), never bypass the hook** — no `--no-verify`, no skip variable the hook offers. Fix only mechanical findings inside the staged paths (formatting, an import order) and retry. Otherwise stop and end with a line starting `NOT COMMITTED:` that names the hook, the failing check, and its first findings. When `--reviewed` was provided, do not ask how to proceed: the workflow fails the commit stage on that line, and resuming re-runs it.
    - Show the result with `git log --oneline -n X` (where X = number of commits you just created)
 
 ## Important:

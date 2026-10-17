@@ -6,6 +6,7 @@
  * `.ts`).
  */
 
+export { BASELINE_COMMIT_OUTCOME, REVIEWED_COMMIT_OUTCOME, runCommitOutcome } from "./commit-outcome.js";
 export { COMMIT_BASELINE_PROMPT, commitPrompt, REVIEWED_COMMIT_PROMPT } from "./commit-prompt.js";
 export { designOutcome, designParser, designStructure } from "./design.js";
 export {

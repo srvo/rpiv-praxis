@@ -281,6 +281,7 @@ const implementScopeCheck = ({ state, cwd }: ScriptContext): Omit<Output, "meta"
 		[...declared, ...acceptance.accepted],
 	);
 	const untracked = new Set(entries.filter((e) => e.xy === "??").map((e) => e.path));
+	haltOnRequarantine(state, cwd, excess, untracked, latest.handle.path);
 	const findings = excess.map((path) => scopeFinding(path, untracked.has(path)));
 	return writeScopeVerdict(latest as FsArtifact, findings, foldScopeVerdict(excess, untracked), cwd, acceptance);
 };
@@ -330,6 +331,7 @@ const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "me
 		withTestTwins([...declared]),
 	);
 	const untracked = new Set(entries.filter((e) => e.xy === "??").map((e) => e.path));
+	haltOnRequarantine(state, cwd, excess, untracked, latest.handle.path);
 	const findings = excess.map((p) => scopeFinding(p, untracked.has(p)));
 	return writeScopeVerdict(latest, findings, foldScopeVerdict(excess, untracked), cwd);
 };
@@ -337,6 +339,10 @@ const implementScopeCheckVet = ({ state, cwd }: ScriptContext): Omit<Output, "me
 /** Bookkeeping home for quarantined excess — under `.rpiv/`, so already exempt
  *  from the floor (`SCOPE_BOOKKEEPING_DIRS`) and outside every plan's write-set. */
 const QUARANTINE_DIR = ".rpiv/tmp/scope-quarantine";
+
+/** The basename-keyed manifest beside the scope verdict, one per plan. */
+const quarantineManifestPath = (planPath: string | undefined): string =>
+	join(VERDICT_DIR, `scope-quarantine__${planPath ? basename(planPath, ".md") : "no-plan"}.json`);
 
 /** One quarantine move record: the path the floor flagged and where it went. */
 type QuarantineMove = { from: string; to: string };
@@ -361,6 +367,45 @@ const readQuarantineManifest = (rel: string, cwd: string): { moved: QuarantineMo
 	} catch {
 		return { moved: [] };
 	}
+};
+
+/**
+ * Halt when the floor flags, as untracked excess, a path an earlier
+ * `scope-quarantine` round already moved out of the tree. Something re-created
+ * it — a later phase, a validate-fix repair, or code that imports it — so the
+ * run needs it, and quarantining it again only feeds the same loop: run
+ * 2026-10-16_19-30-04-6bc9 quarantined two files an implementer had split out
+ * to stay under a line ceiling, validate-fix re-created them, and the cycle
+ * repeated until the backward-jump limit killed the run 117 stages in. The
+ * fix is a plan decision (declare the path in its phase's `files:`, or delete
+ * it), so the floor halts with the list instead of spending the jump budget;
+ * resuming re-runs this check against the amended plan. A first-time flag is
+ * unaffected: only a path recorded in a prior manifest's `moved` halts.
+ * Manifests are read for every plan on the channel (vet appends one plan per
+ * fix round, each with its own basename-keyed manifest).
+ */
+const haltOnRequarantine = (
+	state: RunView,
+	cwd: string,
+	excess: readonly string[],
+	untracked: ReadonlySet<string>,
+	planPath: string,
+): void => {
+	const quarantined = new Set<string>();
+	for (const out of state.named.plans ?? []) {
+		for (const a of out.artifacts) {
+			if (a.handle.kind !== "fs") continue;
+			for (const m of readQuarantineManifest(quarantineManifestPath(a.handle.path), cwd).moved)
+				quarantined.add(m.from);
+		}
+	}
+	const again = excess.filter((p) => untracked.has(p) && quarantined.has(p));
+	if (again.length === 0) return;
+	throw haltPreflight(
+		"implement-scope-check",
+		`implement-scope-check: ${again.length} quarantined file(s) came back — the plan must declare or drop them`,
+		`implement-scope-check: ${again.join(", ")} ${again.length === 1 ? "was" : "were"} moved to ${QUARANTINE_DIR}/ by an earlier scope-quarantine round and re-created since, so the run depends on ${again.length === 1 ? "it" : "them"}. Quarantining again would repeat the same loop until the backward-jump limit. Add each path to the owning phase's \`files:\` in ${planPath} (or delete the file and the code that needs it), then resume the run.`,
+	);
 };
 
 /**
@@ -404,8 +449,7 @@ const scopeQuarantine = ({ state, cwd }: ScriptContext): Omit<Output, "meta"> =>
 	// Manifest path + prior rounds resolved BEFORE the move loop, so the finally
 	// below can always write the merged record.
 	const plan = latestFsArtifact(state, "plans");
-	const key = plan?.handle.kind === "fs" ? basename(plan.handle.path, ".md") : "no-plan";
-	const rel = join(VERDICT_DIR, `scope-quarantine__${key}.json`);
+	const rel = quarantineManifestPath(plan?.handle.kind === "fs" ? plan.handle.path : undefined);
 	const prior = readQuarantineManifest(rel, cwd);
 
 	const moved: QuarantineMove[] = [];

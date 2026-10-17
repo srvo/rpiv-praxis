@@ -36,13 +36,13 @@ import {
 	defineWorkflow,
 	type EdgeFn,
 	fanin,
-	gitCommitOutcome,
 	type PromptFn,
 	produces,
 	setRouteNote,
 } from "@juicesharp/rpiv-workflow/registration";
 import { rpivBucketOutcome } from "../artifact-collector.ts";
 import {
+	BASELINE_COMMIT_OUTCOME,
 	CODE_CONFIRM_FANOUT,
 	CODE_DIMENSION_FANOUT,
 	CODE_PANEL_PROGRESS,
@@ -515,7 +515,7 @@ const buildWorkflow = defineWorkflow({
 		// `commit`/`gitCommitOutcome` pattern) — the arm's OWN edge folds it, so a
 		// no-op remediation stops instead of re-validating an unchanged tree.
 		"validate-fix": acts({ skill: "remediate", reads: ["plans", "validation"], outcome: remediationOutcome }),
-		commit: acts({ prompt: COMMIT_BASELINE_PROMPT, outcome: gitCommitOutcome }),
+		commit: acts({ prompt: COMMIT_BASELINE_PROMPT, outcome: BASELINE_COMMIT_OUTCOME }),
 	},
 	edges: {
 		goal: "research",

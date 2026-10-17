@@ -10,11 +10,12 @@
 //       constraint remains.
 // ===========================================================================
 
-import { acts, defineWorkflow, gitCommitOutcome, produces } from "@juicesharp/rpiv-workflow/registration";
+import { acts, defineWorkflow, produces } from "@juicesharp/rpiv-workflow/registration";
 import {
 	captureReviewScope,
 	IMPLEMENT_DAG_FANOUT,
 	implementScopeCheckVet,
+	REVIEWED_COMMIT_OUTCOME,
 	REVIEWED_COMMIT_PROMPT,
 	reconcile,
 	scopeQuarantine,
@@ -86,7 +87,7 @@ const vetWorkflow = defineWorkflow({
 		// backward-jump budget (the plan-fix precedent).
 		"reconcile-fix": produces.prompt({ prompt: RECONCILE_FIX_PROMPT, outcome: RECONCILE_FIX_OUTCOME }),
 		validate: produces(),
-		commit: acts({ prompt: REVIEWED_COMMIT_PROMPT, outcome: gitCommitOutcome }),
+		commit: acts({ prompt: REVIEWED_COMMIT_PROMPT, outcome: REVIEWED_COMMIT_OUTCOME }),
 	},
 	edges: {
 		goal: "code-review",

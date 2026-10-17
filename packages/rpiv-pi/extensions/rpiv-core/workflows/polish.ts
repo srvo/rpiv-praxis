@@ -6,18 +6,12 @@
 //          ones before it, then implement/validate/review the lot.
 // ===========================================================================
 
-import {
-	acts,
-	defineWorkflow,
-	gitCommitOutcome,
-	handleToString,
-	type PromptFn,
-	produces,
-} from "@juicesharp/rpiv-workflow/registration";
+import { acts, defineWorkflow, handleToString, type PromptFn, produces } from "@juicesharp/rpiv-workflow/registration";
 import {
 	IMPLEMENT_PLANS_FANOUT,
 	latestPlans,
 	REVIEW_PHASE_ITERATE,
+	REVIEWED_COMMIT_OUTCOME,
 	REVIEWED_COMMIT_PROMPT,
 } from "../built-ins/index.js";
 import { codeReviewGate } from "./shared.js";
@@ -47,7 +41,7 @@ const polishWorkflow = defineWorkflow({
 		implement: acts({ loop: IMPLEMENT_PLANS_FANOUT, reads: ["plans"] }),
 		validate: produces({ prompt: VALIDATE_PLANS_PROMPT }),
 		"code-review": produces(),
-		commit: acts({ prompt: REVIEWED_COMMIT_PROMPT, outcome: gitCommitOutcome }),
+		commit: acts({ prompt: REVIEWED_COMMIT_PROMPT, outcome: REVIEWED_COMMIT_OUTCOME }),
 	},
 	edges: {
 		"architecture-review": "blueprint",
