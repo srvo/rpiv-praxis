@@ -92,6 +92,8 @@ export interface ClaudeHostOptions {
 	settingSources?: SettingSource[];
 	/** Called once per turn with what it cost: the raw material for evals and the run ledger.
 	 *  `info.stage` is the engine's stage name for the child (undefined when the engine gave none). */
+	/** Called immediately before each model query, after accumulated run/stage caps can be checked. */
+	onTurnStart?: (stage?: string) => void;
 	onUsage?: (usage: TurnUsage, info: { stage?: string; sessionId: string }) => void;
 }
 
@@ -325,7 +327,7 @@ export class ClaudeWorkflowHost implements WorkflowHostContext {
 		try {
 			if (options.reattach) {
 				const file = options.reattach.sessionFile;
-				child.adopt(basename(file, ".jsonl"), file, file);
+				await child.adopt(basename(file, ".jsonl"), file, file);
 			} else if (options.fork) {
 				const source = basename(options.fork.sessionFile, ".jsonl");
 				const { sessionId } = await this.deps.forkSession(source, { dir: this.cwd });
@@ -334,13 +336,13 @@ export class ClaudeWorkflowHost implements WorkflowHostContext {
 				if (sourceUsage) this.usageSeen.set(sessionId, sourceUsage);
 				// The fork's prefix is the source transcript; its own file is located by
 				// id, never assumed to be the source's (that would point resume at the predecessor).
-				child.adopt(sessionId, options.fork.sessionFile, this.locate(sessionId));
+				await child.adopt(sessionId, options.fork.sessionFile, this.locate(sessionId));
 			} else {
 				const answered = this.opts.parking?.answerFor(options.prompt);
 				if (answered) {
 					if (answered.usage) this.usageSeen.set(answered.sessionId, answered.usage);
 					const file = answered.sessionFile ?? this.locate(answered.sessionId);
-					child.adopt(answered.sessionId, file ?? "", file);
+					await child.adopt(answered.sessionId, file ?? "", file);
 					child.answered = true;
 					await child.sendUserMessage(answered.message);
 					answered.delivered();
@@ -408,10 +410,10 @@ class ClaudeChildSession implements WorkflowSessionContext {
 	 * prefix. Reattach owns that file; a fork passes its own file (or undefined,
 	 * resolved lazily by id) separately.
 	 */
-	adopt(sessionId: string, transcript: string, ownFile: string | undefined): void {
+	async adopt(sessionId: string, transcript: string, ownFile: string | undefined): Promise<void> {
 		this.sessionId = sessionId;
 		this.sessionFile = ownFile;
-		this.branch.push(...(readSessionBranch(transcript) ?? []));
+		this.branch.push(...((await readSessionBranch(transcript)) ?? []));
 	}
 
 	spawnChild<T>(options: SpawnOptions<T>): Promise<T> {
@@ -528,6 +530,7 @@ class ClaudeChildSession implements WorkflowSessionContext {
 		const start = this.branch.length;
 		this.turnStart = start;
 		this.branch.push(userEntry(prompt));
+		this.opts.onTurnStart?.(this.stage);
 		if (this.abort.signal.aborted || this.opts.halt?.aborted) {
 			stampStop(this.branch, "aborted", start);
 			return;

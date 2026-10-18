@@ -130,6 +130,25 @@ describe("git-changes.mjs", () => {
 		expect(preBlock).toMatch(/blog\.md/);
 	});
 
+	it("keeps leading status columns and quoted paths when the first status row is baseline-dirty", () => {
+		initRepo(dir);
+		const fileName = 'blog with "quotes".md';
+		writeFileSync(join(dir, ".gitignore"), ".rpiv/\n");
+		writeFileSync(join(dir, fileName), "committed\n");
+		gitIn(dir, "add", ".gitignore");
+		gitIn(dir, "add", fileName);
+		gitIn(dir, "commit", "-m", "init", "-q");
+		writeFileSync(join(dir, fileName), "pre-existing edit\n");
+		mkdirSync(join(dir, ".rpiv/artifacts/goal"), { recursive: true });
+		writeFileSync(join(dir, ".rpiv/artifacts/goal/baseline-first-row.json"), JSON.stringify({ paths: [fileName] }));
+
+		const out = run(dir, "--baseline", ".rpiv/artifacts/goal/baseline-first-row.json");
+
+		expect(out).toContain("---status---\n(working tree clean)");
+		expect(out).toContain("---pre-existing (do NOT commit");
+		expect(out).toContain(` M ${fileName}\n`);
+	});
+
 	it("without a --baseline flag, fences nothing (no pre-existing section)", () => {
 		initRepo(dir);
 		writeFileSync(join(dir, ".gitignore"), "");

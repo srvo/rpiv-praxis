@@ -167,6 +167,8 @@ export function readLedger(cwd: string, runId: string): LedgerTotals {
 	if (!existsSync(file)) return t;
 	const span = new Map<string, { first: number; last: number }>();
 	let text: string;
+	const ended = new Set<string>();
+	const terminals = new Map<string, number>();
 	try {
 		text = readFileSync(file, "utf-8");
 	} catch {
@@ -180,9 +182,15 @@ export function readLedger(cwd: string, runId: string): LedgerTotals {
 		} catch {
 			continue;
 		}
-		const r = row as Partial<UsageRow | InvocationRow>;
-		if ((r.type !== "usage" && r.type !== "invocation") || typeof r.invocation !== "string") continue;
+		const r = row as Partial<UsageRow | InvocationRow | TerminalRow>;
+		if (typeof r.invocation !== "string") continue;
 		const at = Date.parse(String(r.ts));
+		if (r.type === "terminal") {
+			if (Number.isFinite(at)) terminals.set(r.invocation, Math.max(terminals.get(r.invocation) ?? at, at));
+			continue;
+		}
+		if (r.type !== "usage" && r.type !== "invocation") continue;
+		if (r.type === "invocation" && r.kind === "end") ended.add(r.invocation);
 		if (Number.isFinite(at)) {
 			const s = span.get(r.invocation);
 			if (!s) span.set(r.invocation, { first: at, last: at });
@@ -192,6 +200,11 @@ export function readLedger(cwd: string, runId: string): LedgerTotals {
 			}
 		}
 		if (r.type === "usage") addUsageRow(t, r as UsageRow);
+	}
+	for (const [invocation, at] of terminals) {
+		if (ended.has(invocation)) continue;
+		const s = span.get(invocation);
+		if (s) s.last = Math.max(s.last, at);
 	}
 	for (const s of span.values()) t.elapsedMs += s.last - s.first;
 	return t;

@@ -233,6 +233,23 @@ const fakeHost = () => ({
 // ---------------------------------------------------------------------------
 
 describe("session-backed resume — promotion", () => {
+	it("replays a checkpoint cold instead of promoting an unanswered persisted artifact", async () => {
+		const file = writeSessionFile("sess-1");
+		writeRun([failedRow({ id: "sess-1", file })]);
+		const checkpointWorkflow = {
+			name: "wf",
+			start: "build",
+			stages: { build: { kind: "produces", checkpoint: true, sessionPolicy: "fresh", outcome: announceOutcome() } },
+			edges: { build: "stop" },
+		} as Workflow;
+		const h = makeHarness({ switchBranch: [mockAssistantMessage("done — wrote .rpiv/artifacts/impl/build.md")] });
+
+		await resume(h.ctx, checkpointWorkflow);
+
+		expect(h.switchSessionSpy).not.toHaveBeenCalled();
+		expect(h.newSessionSpy).toHaveBeenCalledOnce();
+		expect(readAllStages(tmpDir, header.runId).at(-1)?.status).not.toBe("completed");
+	});
 	it("adopts the interrupted session's announced artifact: completed row, nothing sent, chain advances", async () => {
 		const file = writeSessionFile("sess-1");
 		writeRun([failedRow({ id: "sess-1", file })]);

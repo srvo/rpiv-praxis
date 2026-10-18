@@ -28,15 +28,6 @@ const LINE_CAP = 200;
 const baselineFlagIdx = process.argv.indexOf("--baseline");
 const BASELINE_PATH = baselineFlagIdx >= 0 ? process.argv[baselineFlagIdx + 1] : undefined;
 
-// The path a `git status --short` line refers to. Columns 0-2 are the XY status
-// code + space; a rename/copy renders `old -> new`, whose committed path is the
-// `new` side.
-const statusPath = (line) => {
-	const rest = line.slice(3).trim();
-	const arrow = rest.indexOf(" -> ");
-	return arrow >= 0 ? rest.slice(arrow + 4).trim() : rest;
-};
-
 // Pre-existing-dirty paths recorded at run start (empty when no --baseline flag /
 // unreadable / malformed — the script then behaves exactly as a baseline-less run).
 const readBaseline = () => {
@@ -54,7 +45,7 @@ const safe = (args, fb) => {
 		return execFileSync("git", args, {
 			encoding: "utf-8",
 			stdio: ["ignore", "pipe", "ignore"],
-		}).trim();
+		});
 	} catch {
 		return fb;
 	}
@@ -78,7 +69,7 @@ const emitCapped = (raw, emptyLabel) => {
 	}
 };
 
-const root = safe(["rev-parse", "--show-toplevel"], "");
+const root = safe(["rev-parse", "--show-toplevel"], "").trim();
 const inRepo = root ? "yes" : "no";
 
 process.stdout.write(`in_repo: ${inRepo}\n`);
@@ -88,13 +79,20 @@ if (!root) {
 }
 
 const baseline = readBaseline();
-const statusLines = safe(["status", "--short"], "")
-	.split("\n")
-	.filter((l) => l.trim() !== "");
+const statusRecords = safe(["status", "--short", "-z"], "").split("\0");
 const inScope = [];
 const preExisting = [];
-for (const line of statusLines) {
-	(baseline.has(statusPath(line)) ? preExisting : inScope).push(line);
+for (let i = 0; i < statusRecords.length; i++) {
+	const record = statusRecords[i];
+	if (!record) continue;
+	const status = record.slice(0, 2);
+	const path = record.slice(3);
+	let line = `${record.slice(0, 3)}${path}`;
+	if (status.includes("R") || status.includes("C")) {
+		// Porcelain -z emits the source path as a second record for renames/copies.
+		line = `${record.slice(0, 3)}${statusRecords[++i]} -> ${path}`;
+	}
+	(baseline.has(path) ? preExisting : inScope).push(line);
 }
 
 process.stdout.write("---status---\n");
@@ -112,7 +110,7 @@ if (preExisting.length > 0) {
 // `git diff HEAD --stat` errors on a fresh repo with no commits — substitute
 // a fallback marker so the LLM knows the status block above already covers
 // what would land in the initial commit.
-const hasHead = safe(["rev-parse", "--verify", "--quiet", "HEAD"], "") !== "";
+const hasHead = safe(["rev-parse", "--verify", "--quiet", "HEAD"], "").trim() !== "";
 process.stdout.write("---diffstat---\n");
 if (!hasHead) {
 	process.stdout.write("(no HEAD yet — initial commit; status above lists all files to be added)\n");

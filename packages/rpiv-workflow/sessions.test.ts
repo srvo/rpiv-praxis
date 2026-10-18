@@ -20,32 +20,33 @@ import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StageDef, StageSchema, Workflow } from "./api.ts";
-import { currentPrimaryArtifact } from "./chain-state.ts";
-import { LifecycleDispatcher } from "./events.ts";
-import { type Artifact, fs as fsHandle } from "./handle.ts";
-import { WorkflowAbortError } from "./internal-utils.ts";
+import type { StageDef, StageSchema, Workflow } from "./api.js";
+import { currentPrimaryArtifact } from "./chain-state.js";
+import { LifecycleDispatcher } from "./events.js";
+import { type Artifact, fs as fsHandle } from "./handle.js";
+import { WorkflowAbortError, WorkflowParkedError } from "./internal-utils.js";
 import {
 	ERR_VALIDATE_RETRY_UNCHANGED,
 	FAIL_STAGE_NO_RESPONSE,
 	FAIL_VALIDATION_EXHAUSTED,
 	MSG_STAGE_FAILED,
-} from "./messages.ts";
-import { finalizeOutput, type Output, outputMeta } from "./output.ts";
-import type { CollectContext, Outcome } from "./output-spec.ts";
-import { reconstructState } from "./runner/resume.ts";
+} from "./messages.js";
+import { finalizeOutput, type Output, outputMeta } from "./output.js";
+import type { CollectContext, Outcome } from "./output-spec.js";
+import { reconstructState } from "./runner/resume.js";
 import {
 	handleRetry,
+	produceAndValidateOutput,
 	produceAttempt,
 	type RetryDeps,
 	validateOutput,
 	worktreeUnchangedSince,
-} from "./sessions/extraction.ts";
-import { executeStageSession } from "./sessions/index.ts";
-import { appendHeader, appendStage, STATE_SCHEMA_VERSION, type WorkflowHeader } from "./state/index.ts";
-import { DEFAULT_TRIGGER } from "./triggers.ts";
-import { typeboxSchema } from "./typebox-adapter.ts";
-import type { RunState, StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "./types.ts";
+} from "./sessions/extraction.js";
+import { executeStageSession } from "./sessions/index.js";
+import { appendHeader, appendStage, STATE_SCHEMA_VERSION, type WorkflowHeader } from "./state/index.js";
+import { DEFAULT_TRIGGER } from "./triggers.js";
+import { typeboxSchema } from "./typebox-adapter.js";
+import type { RunState, StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "./types.js";
 
 /** Default test wiring for SessionContext's lifecycle + runIdentity fields. */
 const testLifecycle = () => new LifecycleDispatcher(undefined);
@@ -56,7 +57,7 @@ const testRunIdentity = (overrides: Partial<{ workflow: string; totalStages: num
 	...overrides,
 });
 
-import { MAX_VALIDATION_RETRIES, MAX_VALIDATION_RETRY_TIMEOUT_MS } from "./validate-output.ts";
+import { MAX_VALIDATION_RETRIES, MAX_VALIDATION_RETRY_TIMEOUT_MS } from "./validate-output.js";
 
 // ---------------------------------------------------------------------------
 // Shared fixtures
@@ -929,6 +930,71 @@ describe("sessions — extracted retry hooks (direct)", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("sessions — collection nudge stop classification", () => {
+	it("does not accept a collected artifact when the nudge parks on a question", async () => {
+		const collector = vi
+			.fn()
+			.mockReturnValueOnce({ kind: "fatal" as const, message: "artifact not found" })
+			.mockReturnValue({
+				kind: "ok" as const,
+				artifacts: [{ handle: fsHandle("valid.md"), role: "primary" as const }],
+			});
+		const branch = [mockAssistantMessage("valid.md")];
+		const parked = { value: false };
+		const child = {
+			sessionManager: { getBranch: () => branch },
+			sendUserMessage: async () => {
+				parked.value = true;
+				branch.push({ type: "message", message: { role: "assistant", stopReason: "aborted" } });
+			},
+			waitForIdle: async () => {},
+			parked: () => parked.value,
+		} as unknown as WorkflowSessionContext;
+		const s = stageSession({
+			cwd: "/tmp",
+			state: freshRunState(),
+			stage: stage({ kind: "produces", outcome: { collector: { collect: collector } } }),
+		});
+
+		await expect(produceAndValidateOutput(child, s, [], undefined)).rejects.toBeInstanceOf(WorkflowParkedError);
+		expect(collector).toHaveBeenCalledTimes(1);
+	});
+
+	it.each(["aborted", "error"] as const)(
+		"does not accept a collected artifact when the nudge ends with stopReason=%s",
+		async (stopReason) => {
+			const collector = vi
+				.fn()
+				.mockReturnValueOnce({ kind: "fatal" as const, message: "artifact not found" })
+				.mockReturnValue({
+					kind: "ok" as const,
+					artifacts: [{ handle: fsHandle("valid.md"), role: "primary" as const }],
+				});
+			const branch = [mockAssistantMessage("valid.md")];
+			const child = {
+				sessionManager: { getBranch: () => branch },
+				sendUserMessage: async () => {
+					branch.push({ type: "message", message: { role: "assistant", stopReason } });
+				},
+				waitForIdle: async () => {},
+				parked: () => false,
+			} as unknown as WorkflowSessionContext;
+			const s = stageSession({
+				cwd: "/tmp",
+				state: freshRunState(),
+				stage: stage({ kind: "produces", outcome: { collector: { collect: collector } } }),
+			});
+
+			if (stopReason === "aborted") {
+				await expect(produceAndValidateOutput(child, s, [], undefined)).rejects.toBeInstanceOf(WorkflowAbortError);
+			} else {
+				await expect(produceAndValidateOutput(child, s, [], undefined)).resolves.toMatchObject({ kind: "fatal" });
+			}
+			expect(collector).toHaveBeenCalledTimes(1);
+		},
+	);
+});
+
 // Outcome resolution (resolveOutcome)
 // ---------------------------------------------------------------------------
 

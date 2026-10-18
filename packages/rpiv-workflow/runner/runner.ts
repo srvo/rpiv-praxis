@@ -18,20 +18,20 @@
  * `## Phase N:` subdivision inside an implement plan artifact.
  */
 
-import type { Workflow } from "../api.ts";
-import { currentPrimaryArtifact } from "../chain-state.ts";
-import { type LifecycleListeners, lifecycleCtxFor } from "../events.ts";
-import { getWorkflowExecutionProvider } from "../execution-host.ts";
-import { handleToString } from "../handle.ts";
-import type { ModelSelection, WorkflowHost, WorkflowHostContext } from "../host.ts";
-import { nowIso } from "../internal-utils.ts";
+import type { Workflow } from "../api.js";
+import { currentPrimaryArtifact } from "../chain-state.js";
+import { type LifecycleListeners, lifecycleCtxFor } from "../events.js";
+import { getWorkflowExecutionProvider } from "../execution-host.js";
+import { handleToString } from "../handle.js";
+import type { ModelSelection, WorkflowHost, WorkflowHostContext } from "../host.js";
+import { nowIso } from "../internal-utils.js";
 import {
 	MSG_HEADER_WRITE_FAILED,
 	MSG_NAME_COLLISION,
 	MSG_NAME_INDEX_WRITE_FAILED,
 	MSG_NAME_INVALID,
-} from "../messages.ts";
-import { pruneOrphanedChildSessions } from "../sessions/index.ts";
+} from "../messages.js";
+import { pruneOrphanedChildSessions } from "../sessions/index.js";
 import {
 	appendHeader,
 	type ClaimResult,
@@ -41,15 +41,16 @@ import {
 	releaseName,
 	STATE_SCHEMA_VERSION,
 	type WorkflowHeader,
-} from "../state/index.ts";
-import { childSessionsDir } from "../state/paths.ts";
-import type { BranchEntry } from "../transcript.ts";
-import { DEFAULT_TRIGGER } from "../triggers.ts";
-import type { RunContext, RunWorkflowOptions, RunWorkflowResult } from "../types.ts";
-import { reconstructState } from "./resume.ts";
-import { resumeRefusalError, selectResumeEntry } from "./resume-entry.ts";
-import { buildRunContext, freshRunState, validateRunBudgets } from "./run-context.ts";
-import { dispatchStageOrRecordFailure } from "./run-stage.ts";
+} from "../state/index.js";
+import { childSessionsDir } from "../state/paths.js";
+import type { BranchEntry } from "../transcript.js";
+import { DEFAULT_TRIGGER } from "../triggers.js";
+import type { RunContext, RunWorkflowOptions, RunWorkflowResult } from "../types.js";
+import { reconstructState } from "./resume.js";
+import { resumeRefusalError, selectResumeEntry } from "./resume-entry.js";
+import { acquireResumeLock, ResumeAlreadyRunningError } from "./resume-lock.js";
+import { buildRunContext, freshRunState, validateRunBudgets } from "./run-context.js";
+import { dispatchStageOrRecordFailure } from "./run-stage.js";
 
 // ---------------------------------------------------------------------------
 // Shared tail — executeRun
@@ -326,6 +327,25 @@ export interface ResumeWorkflowOptions {
  * story: *ran → failed → resumed → continued*.
  */
 export async function resumeWorkflow(
+	ctx: WorkflowHostContext,
+	options: ResumeWorkflowOptions,
+): Promise<RunWorkflowResult> {
+	let release: (() => void) | undefined;
+	try {
+		release = acquireResumeLock(ctx.cwd, options.header.runId);
+	} catch (error) {
+		if (error instanceof ResumeAlreadyRunningError)
+			return { stagesCompleted: 0, success: false, runId: options.header.runId, error: error.message };
+		throw error;
+	}
+	try {
+		return await resumeWorkflowWithLease(ctx, options);
+	} finally {
+		release();
+	}
+}
+
+async function resumeWorkflowWithLease(
 	ctx: WorkflowHostContext,
 	options: ResumeWorkflowOptions,
 ): Promise<RunWorkflowResult> {

@@ -436,6 +436,7 @@ export async function main(
 			stopFor("budget", `stage "${stage}" reached --stage-max-tokens ${stageMaxTokens} (${s.tokens})`);
 		}
 	};
+	checkCaps(undefined);
 	inject.signal?.addEventListener("abort", () => stop.abort(), { once: true });
 	if (inject.signal?.aborted) stop.abort();
 	const runParking = createRunParking({
@@ -469,6 +470,7 @@ export async function main(
 				ledger.record(u, info);
 				checkCaps(info.stage);
 			},
+			onTurnStart: checkCaps,
 		},
 		inject.deps ?? (await defaultDeps()),
 	);

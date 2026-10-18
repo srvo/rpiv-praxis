@@ -390,7 +390,12 @@ export async function resumeStageWithSession(
 	idx: number,
 	run: RunContext,
 ): Promise<ChainOutcome> {
-	return withStageEntryGuard(hostCtx, last.stage, run, () => resumeWithSessionLadder(hostCtx, last, idx, run));
+	return withStageEntryGuard(hostCtx, last.stage, run, () => {
+		const stage = resolveStage(last.stage, idx, run);
+		return "checkpoint" in stage.def && stage.def.checkpoint === true
+			? runSingleStage(hostCtx, stage, idx, run)
+			: resumeWithSessionLadder(hostCtx, last, idx, run);
+	});
 }
 
 /**

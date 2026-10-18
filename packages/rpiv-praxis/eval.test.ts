@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import { sessionUsageOf, turnUsage } from "./claude-host.js";
 import {
 	type EvalDeps,
 	type EvalSpec,
+	nodeEvalDeps,
 	plan,
 	runEval,
 	runTrial,
@@ -201,6 +202,38 @@ describe("runTrial", () => {
 		expect(() => readFileSync(join(t.dir, "work", "node_modules"))).toThrow();
 	});
 
+	it("copies symlink targets so trial writes cannot change the fixture", async () => {
+		const { root } = fixture();
+		writeFileSync(join(root, "fx", "real.txt"), "original\n");
+		symlinkSync("real.txt", join(root, "fx", "link.txt"));
+		const deps: EvalDeps = {
+			now: () => 0,
+			async run(cmd, _args, o) {
+				if (cmd !== "sh") writeFileSync(join(o.cwd, "link.txt"), "changed\n");
+				return { code: 0 };
+			},
+		};
+		const t = plan(spec, join(root, "out"))[0]!;
+		await runTrial(spec, join(root, "fx"), t, deps);
+		expect(readFileSync(join(root, "fx", "real.txt"), "utf8")).toBe("original\n");
+		expect(readFileSync(join(t.dir, "work", "real.txt"), "utf8")).toBe("changed\n");
+		expect(readFileSync(join(t.dir, "work", "link.txt"), "utf8")).toBe("changed\n");
+	});
+	it("refuses fixture symlinks that resolve outside the fixture root", async () => {
+		const { root } = fixture();
+		writeFileSync(join(root, "outside.txt"), "private\n");
+		symlinkSync(join(root, "outside.txt"), join(root, "fx", "escape.txt"));
+		const { deps, calls } = fakeDeps();
+		const t = plan(spec, join(root, "out"))[0]!;
+
+		const result = await runTrial(spec, join(root, "fx"), t, deps);
+
+		expect(result).toMatchObject({ state: "error" });
+		expect(result.error).toMatch(/symlink.*outside the fixture/);
+		expect(calls).toHaveLength(0);
+		expect(readFileSync(join(root, "outside.txt"), "utf8")).toBe("private\n");
+	});
+
 	it("stops parked when the scripted answers run out", async () => {
 		const { root } = fixture();
 		const r = await runTrial(
@@ -348,5 +381,29 @@ describe("long unattended evals", () => {
 		expect(out[0]).toBe("4 trial(s): 2 variant(s) × 2 repeat(s); 1 already recorded, 3 to run");
 		expect(calls.filter((c) => c.cmd !== "sh")).toHaveLength(3);
 		expect(readFileSync(join(dir, "summary.md"), "utf8")).toContain("4 trial(s)");
+		const second = fakeDeps();
+		const secondOut: string[] = [];
+		expect(await runEval(undefined, { continueDir: dir, out: (l) => secondOut.push(l), deps: second.deps })).toBe(0);
+		expect(second.calls.filter((c) => c.cmd !== "sh")).toHaveLength(0);
+		expect(readFileSync(join(dir, "summary.md"), "utf8")).toContain("spent $1.0000");
 	});
+	it.skipIf(process.platform === "win32")(
+		"hard-kills timed-out descendants and closes their output pipes",
+		async () => {
+			const root = mkdtempSync(join(tmpdir(), "rpiv-eval-process-"));
+			const marker = join(root, "survived");
+			const child = `process.on("SIGINT",()=>{}); setTimeout(()=>require("node:fs").writeFileSync(${JSON.stringify(marker)},"survived"),250); setInterval(()=>{},1000);`;
+			const parent = `process.on("SIGINT",()=>{}); const {spawn}=require("node:child_process"); spawn(process.execPath,["-e",${JSON.stringify(child)}],{stdio:"inherit"}); setInterval(()=>{},1000);`;
+			const started = Date.now();
+			await nodeEvalDeps(20).run(process.execPath, ["-e", parent], {
+				cwd: root,
+				env: process.env,
+				log: join(root, "log"),
+				timeoutMs: 20,
+			});
+			expect(Date.now() - started).toBeLessThan(200);
+			await new Promise((resolve) => setTimeout(resolve, 300));
+			expect(existsSync(marker)).toBe(false);
+		},
+	);
 });
