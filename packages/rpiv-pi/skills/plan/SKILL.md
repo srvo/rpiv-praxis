@@ -63,6 +63,11 @@ Copy values verbatim — do not reformat the timezone offset.
 
 The final artifact is implement-ready.
 
+
+## Durable Plan Updates (Required)
+
+Use the active qualified Kata issue as the evolving handoff timeline. After writing the plan and after each material change to scope, sequencing, decisions, or acceptance criteria, post a concise `kata comment <project#ref> --body "..." --agent` with the plan path, what changed, why, and the next gate. When implementation commits are authorized, comment immediately after each commit with its full hash, phase/files, verification result, and next step. If work is still uncommitted, say so explicitly; never invent a hash or create a commit just to produce a comment. Keep the plan artifact and Kata timeline consistent; no secrets in comments.
+
 ## Steps
 
 ### Step 1: Read Design Artifact

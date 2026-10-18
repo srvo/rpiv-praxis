@@ -69,6 +69,10 @@ With a plan path in hand:
 - Create a todo list to track your progress
 - Start implementing if you understand what needs to be done
 
+## Durable Progress Comments (Required)
+
+Keep the active qualified Kata issue current as the implementation evolves. Post a concise comment after the initial plan/phase is selected, at meaningful phase boundaries, and whenever a scope, decision, blocker, or next gate changes. When an authorized code commit is created, immediately comment with its full hash, phase/files, verification result, and next step. If the work is uncommitted, state that explicitly and do not invent a hash or commit just to create one. Update the plan artifact and issue timeline together; do not put secrets in comments or close unfinished work.
+
 ## Implementation Philosophy
 
 Plans are carefully designed, but reality can be messy. Your job is to:
