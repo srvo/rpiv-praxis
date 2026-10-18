@@ -402,7 +402,9 @@ Present the design artifact location to the developer:
 
    **Next step:** `/plan .rpiv/artifacts/designs/{filename}.md` — sequence the design into implementation phases (slice ≡ phase, 1:1) and run the artifact reviewer pair.
 
-   > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+   **Working directory:** `{absolute working directory}`
+   Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the next step above in this conversation; keep its exact command, arguments, and working directory.
+   > After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
    ```
 
 ### Step 9: Handle Follow-ups

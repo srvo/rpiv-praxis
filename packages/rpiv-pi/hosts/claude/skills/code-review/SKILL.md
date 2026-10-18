@@ -513,7 +513,9 @@ Ask follow-ups, or chain forward.
 
 **Next step:** `/rpiv:design "Address findings from .rpiv/artifacts/reviews/{filename}.md"` — run the design phase over the review document to produce a fix plan.
 
-> 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+**Working directory:** `{absolute working directory}`
+Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the next step above in this conversation; keep its exact command, arguments, and working directory. Omit this offer if there are no actionable findings.
+> After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
 ```
 
 ### Step 9: Handle Follow-ups

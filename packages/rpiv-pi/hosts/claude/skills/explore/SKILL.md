@@ -341,9 +341,12 @@ Solutions document written to:
 
 💬 Follow-up: describe the change in chat to append a timestamped Follow-up section to this artifact. Re-run `/rpiv:explore` for a fresh artifact.
 
-**Next step:** `/rpiv:design .rpiv/artifacts/solutions/{filename}.md` — turn the chosen option into a design artifact (or `/rpiv:blueprint .rpiv/artifacts/solutions/{filename}.md` for the fast path on smaller tasks).
+**Next step (default):** `/rpiv:design .rpiv/artifacts/solutions/{filename}.md` — turn the chosen option into a design artifact.
+**Alternative:** `/rpiv:blueprint .rpiv/artifacts/solutions/{filename}.md` — explicitly choose the fast path on smaller tasks.
 
-> 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+**Working directory:** `{absolute working directory}`
+Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the default next step above in this conversation; keep its exact command, arguments, and working directory. The alternative requires an explicit choice.
+> After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
 ```
 
 ### Step 9: Handle Follow-ups

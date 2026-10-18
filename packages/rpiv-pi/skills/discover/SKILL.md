@@ -199,14 +199,16 @@ Compile interview output into the FRD. The interview's logical order (problem �
 
    **Next step:** `/skill:research .rpiv/artifacts/discover/<YYYY-MM-DD_HH-MM-SS>_<topic>.md` — ground the intent in codebase reality.
 
-   > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+   **Working directory:** `{absolute working directory}`
+   Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the next step above in this conversation; keep its exact command, arguments, and working directory.
+   > After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
    ```
 
 ### Step 8: Handle Follow-ups
 
 - **Fresh artifact per call, no in-place append.** Discover deliberately writes a NEW timestamp-distinct FRD on every invocation — there is no `## Follow-up` append mode. The prior FRD stays unchanged on disk.
 - **Iterate by re-invoking.** Re-run `/skill:discover [path-to-prior-FRD]` (or `/skill:discover <free-text>`) to produce a fresh FRD informed by the prior one.
-- **No rubber-stamp question.** NEVER ask a final "looks good / want to adjust" question — chain forward to research is automatic at Step 7.
+- **No rubber-stamp question.** NEVER ask a final "looks good / want to adjust" question — present the research handoff at Step 7, then wait for `next` or the explicit command; do not start research automatically.
 - **Manual edits are allowed.** If the developer wants a one-off correction without re-running the full interview, they can Edit the FRD directly — the skill does not own follow-up surface area beyond fresh-artifact-per-call.
 
 ## Important Notes
