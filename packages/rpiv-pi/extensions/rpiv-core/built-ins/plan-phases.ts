@@ -14,7 +14,7 @@ import {
 	type Unit,
 } from "@juicesharp/rpiv-workflow/registration";
 import { parseFrontmatter } from "../frontmatter.js";
-import { countHeadingsOutsideFences } from "./markdown-fence.js";
+import { countHeadingsOutsideFences, forEachLineOutsideFences } from "./markdown-fence.js";
 import {
 	haltPreflight,
 	latestFsArtifact,
@@ -50,6 +50,29 @@ const planPhaseRecords = (content: string, who: string, path: string): readonly 
 			who,
 			`${who}: plan ${path} has mismatched phases`,
 			`${who}: plan ${path} frontmatter phases (${phases.length}) ≠ '## Phase N:' headings (${headingCount}) — the derived array is stale against the body`,
+		);
+	}
+	const bodyPhaseNumbers: number[] = [];
+	forEachLineOutsideFences(content, (line) => {
+		const match = /^## Phase (\d+):/.exec(line);
+		if (match) bodyPhaseNumbers.push(Number(match[1]));
+	});
+	if (bodyPhaseNumbers.some((n, index) => n !== index + 1)) {
+		throw haltPreflight(
+			who,
+			`${who}: plan ${path} has invalid phase numbering`,
+			`${who}: body phase numbers (${bodyPhaseNumbers.join(", ")}) must be sequential from 1`,
+		);
+	}
+	const frontmatterPhaseNumbers = phases.map((entry, index) => {
+		const n = (entry as { n?: unknown } | undefined)?.n;
+		return typeof n === "number" ? n : index + 1;
+	});
+	if (frontmatterPhaseNumbers.some((n, index) => n !== bodyPhaseNumbers[index])) {
+		throw haltPreflight(
+			who,
+			`${who}: plan ${path} has phase identity drift`,
+			`${who}: plan ${path} frontmatter phase numbers (${frontmatterPhaseNumbers.join(", ")}) do not match ordered body headings (${bodyPhaseNumbers.join(", ")})`,
 		);
 	}
 	// The REQUIRED scalar `phase_count` must equal the derived phase count — it
@@ -172,7 +195,7 @@ const phaseWriteSetDeps = (records: readonly PhaseRecord[], self: PhaseRecord): 
 		for (const r of records) {
 			if (r.n >= self.n) continue;
 			const rFiles = withTestTwins(phaseFiles(r.entry));
-			if (rFiles.some((f) => selfFiles.includes(f))) ns.add(r.n);
+			if (rFiles.length === 0 || rFiles.some((f) => selfFiles.includes(f))) ns.add(r.n);
 		}
 	}
 	return [...ns].sort((a, b) => a - b).map((n) => `phase-${n}`);

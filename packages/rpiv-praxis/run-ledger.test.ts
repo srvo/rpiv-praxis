@@ -70,7 +70,15 @@ const apiWith = (body: (ctx: unknown, opts: unknown) => Promise<RunWorkflowResul
 	resumeWorkflowByRunId: vi.fn(async (ctx, _r, opts) => body(ctx, opts)),
 });
 const hostOpts = (ctx: unknown) =>
-	(ctx as { opts: { onUsage(u: TurnUsage, i: { stage?: string; sessionId: string }): void; halt: AbortSignal } }).opts;
+	(
+		ctx as {
+			opts: {
+				onUsage(u: TurnUsage, i: { stage?: string; sessionId: string }): void;
+				onTurnStart(stage?: string): void;
+				halt: AbortSignal;
+			};
+		}
+	).opts;
 const deps = { query: vi.fn(), forkSession: vi.fn() } as never;
 
 describe("usageRow", () => {
@@ -118,6 +126,24 @@ describe("RunLedger", () => {
 		]);
 		expect(readLedger(cwd, "r1").elapsedMs).toBe(6 * 60_000);
 	});
+	it("counts a forced-exit terminal timestamp when no end row was written", () => {
+		const cwd = project();
+		seedRun(cwd, "r1", [
+			{ type: "invocation", ts: "2026-10-16T00:00:00Z", invocation: "aborted", kind: "run" },
+			{ type: "terminal", ts: "2026-10-16T00:02:00Z", invocation: "aborted", outcome: "aborted", reason: "SIGTERM" },
+		]);
+		expect(readLedger(cwd, "r1").elapsedMs).toBe(120_000);
+	});
+
+	it("does not extend a normally closed invocation to its later terminal row", () => {
+		const cwd = project();
+		seedRun(cwd, "r1", [
+			{ type: "invocation", ts: "2026-10-16T00:00:00Z", invocation: "closed", kind: "run" },
+			{ type: "invocation", ts: "2026-10-16T00:01:00Z", invocation: "closed", kind: "end" },
+			{ type: "terminal", ts: "2026-10-16T00:02:00Z", invocation: "closed", outcome: "completed" },
+		]);
+		expect(readLedger(cwd, "r1").elapsedMs).toBe(60_000);
+	});
 });
 
 describe("rpiv-wf caps across resumes", () => {
@@ -144,6 +170,23 @@ describe("rpiv-wf caps across resumes", () => {
 		expect(rows.some((r) => r.type === "invocation" && r.kind === "resumed")).toBe(true);
 	});
 
+	it("halts before resuming when prior spending already exhausts the run cap", async () => {
+		const cwd = project();
+		seedRun(cwd, "r1", [priorUsage("a", "2026-10-16T00:00:00Z", 1.2)]);
+		let haltedAtEntry: boolean | undefined;
+		const api = apiWith(async (ctx) => {
+			haltedAtEntry = hostOpts(ctx).halt.aborted;
+			return { success: false, stagesCompleted: 0, runId: "r1", error: "halted before query" };
+		});
+		const code = await main(
+			["resume", "r1", "--max-cost", "1", "--cwd", cwd, "--plugin-dir", plugin()],
+			{ out: () => {}, err: () => {} },
+			{ api, deps, kata: null },
+		);
+		expect(haltedAtEntry).toBe(true);
+		expect(code).toBe(EXIT.budget);
+		expect(runRows(cwd, "r1").filter((r) => r.type === "usage")).toHaveLength(1);
+	});
 	it("--max-cost warns, instead of pretending, when the SDK reports no cost", async () => {
 		const cwd = project();
 		const api = apiWith(async (ctx) => {
@@ -178,6 +221,24 @@ describe("rpiv-wf caps across resumes", () => {
 		expect(code).toBe(EXIT.timeout);
 	});
 
+	it("checks accumulated stage tokens before a resumed stage starts another turn", async () => {
+		const cwd = project();
+		seedRun(cwd, "r1", [priorUsage("a", "2026-10-16T00:00:00Z", undefined, "plan")]);
+		let haltedBeforeTurn: boolean | undefined;
+		const api = apiWith(async (ctx, _opts) => {
+			const options = hostOpts(ctx) as ReturnType<typeof hostOpts> & { onTurnStart(stage?: string): void };
+			options.onTurnStart("plan");
+			haltedBeforeTurn = options.halt.aborted;
+			return { success: false, stagesCompleted: 0, runId: "r1", error: "halted before turn" };
+		});
+		const code = await main(
+			["resume", "r1", "--stage-max-tokens", "1000", "--cwd", cwd, "--plugin-dir", plugin()],
+			{ out: () => {}, err: () => {} },
+			{ api, deps, kata: null },
+		);
+		expect(haltedBeforeTurn).toBe(true);
+		expect(code).toBe(EXIT.budget);
+	});
 	it("--stage-max-tokens stops the run once one stage crosses it", async () => {
 		const cwd = project();
 		let halted: boolean | undefined;

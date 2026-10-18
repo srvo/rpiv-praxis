@@ -13,7 +13,8 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import type { BranchEntry } from "@juicesharp/rpiv-workflow";
 
 type Content = NonNullable<BranchEntry["message"]>["content"];
@@ -104,27 +105,49 @@ export function locateSessionFile(sessionId: string, configDir = claudeConfigDir
  * messages in file order. Fail-soft — an unreadable file or line is skipped,
  * matching the `readSessionBranch` contract (death-scene capture must never throw).
  */
-export function readSessionBranch(file: string): BranchEntry[] | undefined {
-	let raw: string;
+export async function readSessionBranch(file: string): Promise<BranchEntry[] | undefined> {
+	if (!existsSync(file)) return undefined;
+	const sessionId = basename(file, ".jsonl");
 	try {
-		raw = readFileSync(file, "utf8");
+		const raw = readFileSync(file, "utf8");
+		const rows = await getSessionMessages(sessionId);
+		if (rows.length === 0) {
+			const legacy: BranchEntry[] = [];
+			for (const line of raw.split("\n")) {
+				if (!line.trim()) continue;
+				let row: {
+					type?: string;
+					uuid?: string;
+					parentUuid?: string | null;
+					isSidechain?: boolean;
+					message?: { content?: unknown };
+				};
+				try {
+					row = JSON.parse(line);
+				} catch {
+					continue;
+				}
+				if (row.uuid || row.parentUuid !== undefined) return [];
+				if (row.isSidechain || (row.type !== "user" && row.type !== "assistant") || !row.message) continue;
+				const content = row.message.content;
+				if (row.type === "assistant") legacy.push(assistantEntry(content));
+				else if (typeof content === "string") legacy.push(userEntry(content));
+				else if (Array.isArray(content)) legacy.push({ type: "message", message: { role: "user", content } });
+			}
+			return legacy;
+		}
+		const branch: BranchEntry[] = [];
+		for (const row of rows) {
+			if (row.parent_tool_use_id !== null) continue;
+			const message = row.message as { content?: unknown };
+			const content = message.content;
+			if (row.type === "assistant") branch.push(assistantEntry(content));
+			else if (row.type === "user" && typeof content === "string") branch.push(userEntry(content));
+			else if (row.type === "user" && Array.isArray(content))
+				branch.push({ type: "message", message: { role: "user", content } });
+		}
+		return branch;
 	} catch {
 		return undefined;
 	}
-	const branch: BranchEntry[] = [];
-	for (const line of raw.split("\n")) {
-		if (!line.trim()) continue;
-		let row: { type?: string; isSidechain?: boolean; message?: { role?: string; content?: unknown } };
-		try {
-			row = JSON.parse(line);
-		} catch {
-			continue;
-		}
-		if (row.isSidechain || (row.type !== "user" && row.type !== "assistant") || !row.message) continue;
-		const content = row.message.content;
-		if (row.type === "assistant") branch.push(assistantEntry(content));
-		else if (typeof content === "string") branch.push(userEntry(content));
-		else if (Array.isArray(content)) branch.push({ type: "message", message: { role: "user", content } });
-	}
-	return branch;
 }

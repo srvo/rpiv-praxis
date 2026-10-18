@@ -63,31 +63,87 @@ describe("session files", () => {
 		expect(locateSessionFile("x", join(config, "nope"))).toBeUndefined();
 	});
 
-	it("reads main-thread messages and skips sidechains, metadata and bad lines", () => {
-		const { mk } = store();
+	it("reads the SDK session chain and skips sidechains, metadata and bad lines", async () => {
+		const { config, mk } = store();
+		const id = "22222222-2222-4222-8222-222222222222";
 		const rows = [
-			JSON.stringify({ type: "user", message: { role: "user", content: "hi" } }),
-			JSON.stringify({ type: "assistant", message: { role: "assistant", content: [{ type: "text", text: "yo" }] } }),
+			JSON.stringify({ type: "user", uuid: "u1", parentUuid: null, sessionId: id, message: { content: "hi" } }),
 			JSON.stringify({
 				type: "assistant",
+				uuid: "a1",
+				parentUuid: "u1",
+				sessionId: id,
+				message: { content: [{ type: "text", text: "yo" }] },
+			}),
+			JSON.stringify({
+				type: "assistant",
+				uuid: "sub",
+				parentUuid: "a1",
+				parent_tool_use_id: "toolu",
 				isSidechain: true,
+				sessionId: id,
 				message: { content: [{ type: "text", text: "sub" }] },
 			}),
-			JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", content: "r" }] } }),
+			JSON.stringify({
+				type: "user",
+				uuid: "u2",
+				parentUuid: "a1",
+				sessionId: id,
+				message: { content: [{ type: "tool_result", content: "r" }] },
+			}),
 			JSON.stringify({ type: "queue-operation" }),
 			"{not json",
 			"",
 		];
-		const branch = readSessionBranch(mk("-p", "s", rows.join("\n")))!;
-		expect(branch.map((e) => [e.message?.role, e.message?.content?.[0]?.type])).toEqual([
-			["user", "text"],
-			["assistant", "text"],
-			["user", "tool_result"],
-		]);
+		const previous = process.env.CLAUDE_CONFIG_DIR;
+		process.env.CLAUDE_CONFIG_DIR = config;
+		try {
+			const branch = (await readSessionBranch(mk("-p", id, rows.join("\n"))))!;
+			expect(branch.map((e) => [e.message?.role, e.message?.content?.[0]?.type])).toEqual([
+				["user", "text"],
+				["assistant", "text"],
+				["user", "tool_result"],
+			]);
+		} finally {
+			if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+			else process.env.CLAUDE_CONFIG_DIR = previous;
+		}
 	});
 
-	it("returns undefined for an unreadable file", () => {
-		expect(readSessionBranch("/nonexistent/file.jsonl")).toBeUndefined();
+	it("reads only the SDK-selected parentUuid chain after a transcript rewind", async () => {
+		const { config, mk } = store();
+		const id = "11111111-1111-4111-8111-111111111111";
+		const rows = [
+			{ type: "user", uuid: "u1", parentUuid: null, sessionId: id, message: { content: "start" } },
+			{
+				type: "assistant",
+				uuid: "a1",
+				parentUuid: "u1",
+				sessionId: id,
+				message: { content: [{ type: "text", text: "wrote .rpiv/artifacts/abandoned.md" }] },
+			},
+			{ type: "user", uuid: "u2", parentUuid: "u1", sessionId: id, message: { content: "revise it" } },
+			{
+				type: "assistant",
+				uuid: "a2",
+				parentUuid: "u2",
+				sessionId: id,
+				message: { content: [{ type: "text", text: "active answer" }] },
+			},
+		];
+		const previous = process.env.CLAUDE_CONFIG_DIR;
+		process.env.CLAUDE_CONFIG_DIR = config;
+		try {
+			const branch = await readSessionBranch(mk("-p", id, rows.map((row) => JSON.stringify(row)).join("\n")));
+			expect(branch?.map((entry) => entry.message?.role)).toEqual(["user", "user", "assistant"]);
+			expect(JSON.stringify(branch)).not.toContain("abandoned.md");
+		} finally {
+			if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+			else process.env.CLAUDE_CONFIG_DIR = previous;
+		}
+	});
+	it("returns undefined for an unreadable file", async () => {
+		expect(await readSessionBranch("/nonexistent/file.jsonl")).toBeUndefined();
 	});
 
 	it("honours CLAUDE_CONFIG_DIR", () => {

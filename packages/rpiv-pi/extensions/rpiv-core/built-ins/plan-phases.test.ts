@@ -1,9 +1,4 @@
-/**
- * plan-phases.test.ts — phase-plan frontmatter mechanics on the built-in
- * graph (FRONTMATTER_PHASE_FANOUT, IMPLEMENT_DAG_FANOUT, polish
- * REVIEW_PHASE_ITERATE), moved verbatim from built-in-workflows.test.ts.
- * Graph-attached: stages are reached through findWorkflow(...).
- */
+/** Phase-plan frontmatter and fanout mechanics. */
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,6 +51,31 @@ describe("FRONTMATTER_PHASE_FANOUT", () => {
 		const rel = ".rpiv/artifacts/plans/mismatch.md";
 		writePlan(rel, `---\nphases:\n  - { n: 1, title: Only one }\n---\n## Phase 1: a\n## Phase 2: b\n## Phase 3: c\n`);
 		expect(() => runFanout(rel)).toThrow(/frontmatter phases \(1\) ≠ '## Phase N:' headings \(3\)/);
+	});
+	it("rejects duplicate frontmatter phase numbers that drift from ordered body headings", () => {
+		const rel = ".rpiv/artifacts/plans/duplicate-number.md";
+		writePlan(
+			rel,
+			`---\nstatus: ready\nphase_count: 2\nphases:\n  - { n: 1, title: First }\n  - { n: 1, title: Second }\n---\n## Phase 1: First\n## Phase 2: Second\n`,
+		);
+		expect(() => runFanout(rel)).toThrow(/phase numbers .* do not match ordered body headings/);
+	});
+	it("rejects duplicate body phase identities even when frontmatter matches them", () => {
+		const rel = ".rpiv/artifacts/plans/duplicate-body-phase.md";
+		writePlan(
+			rel,
+			`---\nstatus: ready\nphase_count: 2\nphases:\n  - { n: 1, title: First }\n  - { n: 1, title: Second }\n---\n## Phase 1: First\n## Phase 1: Second\n`,
+		);
+		expect(() => runFanout(rel)).toThrow(/must be sequential from 1/);
+	});
+
+	it("ignores fenced phase headings when checking phase identity", async () => {
+		const rel = ".rpiv/artifacts/plans/fenced-phase.md";
+		writePlan(
+			rel,
+			`---\nstatus: ready\nphase_count: 1\nphases:\n  - { n: 1, title: Real phase }\n---\n## Phase 1: Real phase\n\n\`\`\`md\n## Phase 2: Example only\n\`\`\`\n`,
+		);
+		expect((await runFanout(rel)).map((unit) => unit.prompt)).toEqual([`${rel} Phase 1: Real phase`]);
 	});
 
 	it("returns no units for a plan with neither structured phases nor body headings", async () => {
@@ -227,6 +247,36 @@ describe("IMPLEMENT_DAG_FANOUT (build implement — dep-gated phase units)", () 
 		const units = await runFanout(rel);
 		const depsByPhase = new Map(units.map((u) => [u.id, u.deps ?? []]));
 		expect(depsByPhase.get("phase-2")).toEqual(["phase-1"]);
+	});
+
+	it("orders declared phases after earlier phases with unknown write sets", async () => {
+		const rel = ".rpiv/artifacts/plans/mixed-write-sets.md";
+		writePlan(
+			rel,
+			[
+				"---",
+				"status: ready",
+				"phase_count: 4",
+				"phases:",
+				"  - { n: 1, title: Unknown first }",
+				"  - { n: 2, title: Known after unknown, files: [packages/a/two.ts] }",
+				"  - { n: 3, title: Known first, files: [packages/a/three.ts] }",
+				"  - { n: 4, title: Unknown after known }",
+				"---",
+				"# Plan",
+				"## Phase 1: Unknown first",
+				"## Phase 2: Known after unknown",
+				"## Phase 3: Known first",
+				"## Phase 4: Unknown after known",
+				"",
+			].join("\n"),
+		);
+
+		const units = await runFanout(rel);
+		const depsByPhase = new Map(units.map((u) => [u.id, u.deps ?? []]));
+		expect(depsByPhase.get("phase-2")).toEqual(["phase-1"]);
+		expect(depsByPhase.get("phase-3")).toEqual(["phase-1"]);
+		expect(depsByPhase.get("phase-4")).toEqual(["phase-1", "phase-2", "phase-3"]);
 	});
 
 	it("degrades to the full chain when every phase omits files (clause B — serial at any cap)", async () => {

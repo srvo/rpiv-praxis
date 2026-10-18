@@ -2128,6 +2128,48 @@ describe("resumeWorkflow", () => {
 		});
 	});
 
+	it("refuses a concurrent resume before it duplicates a sessionless side effect", async () => {
+		let allowed = false;
+		let executions = 0;
+		let announceEntered!: () => void;
+		let release!: () => void;
+		const entered = new Promise<void>((resolve) => (announceEntered = resolve));
+		const blocked = new Promise<void>((resolve) => (release = resolve));
+		const workflow: Workflow = {
+			name: "resume-lock",
+			start: "effect",
+			stages: {
+				effect: acts.script({
+					run: async () => {
+						executions++;
+						if (!allowed) throw new Error("seed failure");
+						if (executions === 2) {
+							announceEntered();
+							await blocked;
+						}
+					},
+				}),
+			},
+			edges: { effect: "stop" },
+		};
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const first = await runWorkflow(chain.ctx, { workflow, input: "x" });
+		expect(first.success).toBe(false);
+		const header = readHeader(tmpDir, first.runId!)!;
+		allowed = true;
+
+		const owner = resumeWorkflow(chain.ctx, { workflow, header, ref: `@${header.runId}` });
+		await entered;
+		const duplicate = await resumeWorkflow(chain.ctx, { workflow, header, ref: `@${header.runId}` });
+		release();
+		const completed = await owner;
+
+		expect(duplicate.success).toBe(false);
+		expect(duplicate.error).toMatch(/already being resumed/);
+		expect(completed.success).toBe(true);
+		expect(executions).toBe(2);
+		expect(readAllStages(tmpDir, header.runId).map((row) => row.stageNumber)).toEqual([1, 2]);
+	});
 	// Mid-loop resume dispatch (fanout/iterate/assess) is covered end-to-end in `resume-loop.test.ts`.
 });
 

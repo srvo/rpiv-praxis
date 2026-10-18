@@ -48,6 +48,7 @@ import { DEFAULT_TRIGGER } from "../triggers.js";
 import type { RunContext, RunWorkflowOptions, RunWorkflowResult } from "../types.js";
 import { reconstructState } from "./resume.js";
 import { resumeRefusalError, selectResumeEntry } from "./resume-entry.js";
+import { acquireResumeLock, ResumeAlreadyRunningError } from "./resume-lock.js";
 import { buildRunContext, freshRunState, validateRunBudgets } from "./run-context.js";
 import { dispatchStageOrRecordFailure } from "./run-stage.js";
 
@@ -326,6 +327,25 @@ export interface ResumeWorkflowOptions {
  * story: *ran → failed → resumed → continued*.
  */
 export async function resumeWorkflow(
+	ctx: WorkflowHostContext,
+	options: ResumeWorkflowOptions,
+): Promise<RunWorkflowResult> {
+	let release: (() => void) | undefined;
+	try {
+		release = acquireResumeLock(ctx.cwd, options.header.runId);
+	} catch (error) {
+		if (error instanceof ResumeAlreadyRunningError)
+			return { stagesCompleted: 0, success: false, runId: options.header.runId, error: error.message };
+		throw error;
+	}
+	try {
+		return await resumeWorkflowWithLease(ctx, options);
+	} finally {
+		release();
+	}
+}
+
+async function resumeWorkflowWithLease(
 	ctx: WorkflowHostContext,
 	options: ResumeWorkflowOptions,
 ): Promise<RunWorkflowResult> {

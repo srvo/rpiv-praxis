@@ -24,7 +24,7 @@ import type { StageDef, StageSchema, Workflow } from "./api.js";
 import { currentPrimaryArtifact } from "./chain-state.js";
 import { LifecycleDispatcher } from "./events.js";
 import { type Artifact, fs as fsHandle } from "./handle.js";
-import { WorkflowAbortError } from "./internal-utils.js";
+import { WorkflowAbortError, WorkflowParkedError } from "./internal-utils.js";
 import {
 	ERR_VALIDATE_RETRY_UNCHANGED,
 	FAIL_STAGE_NO_RESPONSE,
@@ -36,6 +36,7 @@ import type { CollectContext, Outcome } from "./output-spec.js";
 import { reconstructState } from "./runner/resume.js";
 import {
 	handleRetry,
+	produceAndValidateOutput,
 	produceAttempt,
 	type RetryDeps,
 	validateOutput,
@@ -929,6 +930,71 @@ describe("sessions — extracted retry hooks (direct)", () => {
 });
 
 // ---------------------------------------------------------------------------
+describe("sessions — collection nudge stop classification", () => {
+	it("does not accept a collected artifact when the nudge parks on a question", async () => {
+		const collector = vi
+			.fn()
+			.mockReturnValueOnce({ kind: "fatal" as const, message: "artifact not found" })
+			.mockReturnValue({
+				kind: "ok" as const,
+				artifacts: [{ handle: fsHandle("valid.md"), role: "primary" as const }],
+			});
+		const branch = [mockAssistantMessage("valid.md")];
+		const parked = { value: false };
+		const child = {
+			sessionManager: { getBranch: () => branch },
+			sendUserMessage: async () => {
+				parked.value = true;
+				branch.push({ type: "message", message: { role: "assistant", stopReason: "aborted" } });
+			},
+			waitForIdle: async () => {},
+			parked: () => parked.value,
+		} as unknown as WorkflowSessionContext;
+		const s = stageSession({
+			cwd: "/tmp",
+			state: freshRunState(),
+			stage: stage({ kind: "produces", outcome: { collector: { collect: collector } } }),
+		});
+
+		await expect(produceAndValidateOutput(child, s, [], undefined)).rejects.toBeInstanceOf(WorkflowParkedError);
+		expect(collector).toHaveBeenCalledTimes(1);
+	});
+
+	it.each(["aborted", "error"] as const)(
+		"does not accept a collected artifact when the nudge ends with stopReason=%s",
+		async (stopReason) => {
+			const collector = vi
+				.fn()
+				.mockReturnValueOnce({ kind: "fatal" as const, message: "artifact not found" })
+				.mockReturnValue({
+					kind: "ok" as const,
+					artifacts: [{ handle: fsHandle("valid.md"), role: "primary" as const }],
+				});
+			const branch = [mockAssistantMessage("valid.md")];
+			const child = {
+				sessionManager: { getBranch: () => branch },
+				sendUserMessage: async () => {
+					branch.push({ type: "message", message: { role: "assistant", stopReason } });
+				},
+				waitForIdle: async () => {},
+				parked: () => false,
+			} as unknown as WorkflowSessionContext;
+			const s = stageSession({
+				cwd: "/tmp",
+				state: freshRunState(),
+				stage: stage({ kind: "produces", outcome: { collector: { collect: collector } } }),
+			});
+
+			if (stopReason === "aborted") {
+				await expect(produceAndValidateOutput(child, s, [], undefined)).rejects.toBeInstanceOf(WorkflowAbortError);
+			} else {
+				await expect(produceAndValidateOutput(child, s, [], undefined)).resolves.toMatchObject({ kind: "fatal" });
+			}
+			expect(collector).toHaveBeenCalledTimes(1);
+		},
+	);
+});
+
 // Outcome resolution (resolveOutcome)
 // ---------------------------------------------------------------------------
 

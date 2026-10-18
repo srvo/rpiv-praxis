@@ -23,8 +23,18 @@
  */
 
 import { spawn } from "node:child_process";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import {
+	appendFileSync,
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { CLI_BIN, EXIT_STATE } from "./mcp.js";
 import { emptyTotals, mergeTotals, type UsageTotals } from "./usage.js";
 
@@ -173,6 +183,30 @@ function readJson<T>(file: string): T | undefined {
 		return undefined;
 	}
 }
+function assertFixtureSymlinksStayWithinRoot(fixture: string): void {
+	const root = realpathSync(fixture);
+	const visit = (directory: string): void => {
+		for (const entry of readdirSync(directory, { withFileTypes: true })) {
+			if (entry.name === "node_modules") continue;
+			const path = join(directory, entry.name);
+			if (entry.isSymbolicLink()) {
+				let target: string;
+				try {
+					target = realpathSync(path);
+				} catch {
+					throw new Error(`fixture symlink ${path} cannot be resolved`);
+				}
+				const fromRoot = relative(root, target);
+				if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+					throw new Error(`fixture symlink ${path} resolves outside the fixture root`);
+				}
+			} else if (entry.isDirectory()) {
+				visit(path);
+			}
+		}
+	};
+	visit(root);
+}
 
 export async function runTrial(spec: EvalSpec, fixture: string, t: Trial, deps: EvalDeps): Promise<TrialResult> {
 	const work = join(t.dir, "work");
@@ -180,10 +214,6 @@ export async function runTrial(spec: EvalSpec, fixture: string, t: Trial, deps: 
 	const minutes = spec.timeoutMinutes ?? 30;
 	// rpiv-wf stops itself at `minutes` (resumable, exit 124); the kill is the backstop.
 	const timeoutMs = (minutes + 2) * 60_000;
-	rmSync(t.dir, { recursive: true, force: true }); // a half-finished trial from an interrupted eval
-	mkdirSync(t.dir, { recursive: true });
-	cpSync(fixture, work, { recursive: true, filter: (src) => basename(src) !== "node_modules" });
-	const env = { ...process.env, ...t.variant.env, RPIV_WF_KATA: "off" };
 	const result: TrialResult = {
 		variant: t.variant.name,
 		repeat: t.repeat,
@@ -196,6 +226,22 @@ export async function runTrial(spec: EvalSpec, fixture: string, t: Trial, deps: 
 		checks: [],
 		dir: t.dir,
 	};
+	rmSync(t.dir, { recursive: true, force: true }); // a half-finished trial from an interrupted eval
+	mkdirSync(t.dir, { recursive: true });
+	cpSync(fixture, work, {
+		recursive: true,
+		dereference: false,
+		verbatimSymlinks: true,
+		filter: (src) => basename(src) !== "node_modules",
+	});
+	try {
+		assertFixtureSymlinksStayWithinRoot(work);
+	} catch (error) {
+		rmSync(t.dir, { recursive: true, force: true });
+		result.error = error instanceof Error ? error.message : String(error);
+		return result;
+	}
+	const env = { ...process.env, ...t.variant.env, RPIV_WF_KATA: "off" };
 	const started = deps.now();
 	if (t.variant.setup) {
 		const s = await deps.run("sh", ["-c", t.variant.setup], { cwd: work, env, log, timeoutMs });
@@ -302,6 +348,16 @@ function recorded(outDir: string): Map<string, TrialResult> {
 	return done;
 }
 
+/** Drop a crash-truncated final JSONL record before any later append. */
+function repairResultsTail(outDir: string): void {
+	const file = join(outDir, "results.jsonl");
+	if (!existsSync(file)) return;
+	const contents = readFileSync(file, "utf8");
+	if (!contents || contents.endsWith("\n")) return;
+	const lastNewline = contents.lastIndexOf("\n");
+	writeFileSync(file, lastNewline < 0 ? "" : contents.slice(0, lastNewline + 1));
+}
+
 export async function runEval(
 	specFile: string | undefined,
 	opts: {
@@ -342,6 +398,7 @@ export async function runEval(
 	if (opts.dryRun) return 0;
 	const deps = opts.deps ?? nodeEvalDeps();
 	mkdirSync(outDir, { recursive: true });
+	repairResultsTail(outDir);
 	opts.out(`results: ${outDir}`);
 	if (!saved)
 		writeFileSync(join(outDir, "spec.json"), `${JSON.stringify({ ...spec, fixtureDir: fixture }, null, "\t")}\n`);
@@ -386,20 +443,32 @@ export async function runEval(
 	return skipped > 0 ? 3 : 0;
 }
 
-export function nodeEvalDeps(): EvalDeps {
+export function nodeEvalDeps(hardKillMs = 30_000): EvalDeps {
 	return {
 		now: () => Date.now(),
 		run: (cmd, args, o) =>
 			new Promise((done) => {
-				const child = spawn(cmd, args, { cwd: o.cwd, env: o.env, stdio: ["ignore", "pipe", "pipe"] });
+				const detached = process.platform !== "win32";
+				const child = spawn(cmd, args, { cwd: o.cwd, env: o.env, stdio: ["ignore", "pipe", "pipe"], detached });
 				const write = (b: Buffer) => appendFileSync(o.log, b);
+				const signal = (name: NodeJS.Signals) => {
+					if (!detached || child.pid === undefined) {
+						child.kill(name);
+						return;
+					}
+					try {
+						process.kill(-child.pid, name);
+					} catch {
+						// The group may already have exited.
+					}
+				};
 				child.stdout.on("data", write);
 				child.stderr.on("data", write);
-				// SIGINT lets rpiv-wf stop resumably; SIGKILL if it has not exited 30s later.
+				// SIGINT lets rpiv-wf stop resumably; then hard-kill its Unix process group. Windows can only signal the direct child.
 				let kill: NodeJS.Timeout | undefined;
 				const timer = setTimeout(() => {
-					child.kill("SIGINT");
-					kill = setTimeout(() => child.kill("SIGKILL"), 30_000);
+					signal("SIGINT");
+					kill = setTimeout(() => signal("SIGKILL"), hardKillMs);
 				}, o.timeoutMs);
 				child.on("close", (code) => {
 					clearTimeout(timer);

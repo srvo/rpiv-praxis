@@ -19,7 +19,14 @@ import type { StageDef, StageSchema } from "../api.js";
 import { allocateStageNumber, currentStageRef } from "../audit.js";
 import { lifecycleCtxFromSession } from "../events.js";
 import type { Artifact } from "../handle.js";
-import { assertNever, formatError, nowIso, withTimeout } from "../internal-utils.js";
+import {
+	assertNever,
+	formatError,
+	nowIso,
+	WorkflowAbortError,
+	WorkflowParkedError,
+	withTimeout,
+} from "../internal-utils.js";
 import {
 	ERR_COLLECTOR_THREW,
 	ERR_PARSER_THREW,
@@ -30,7 +37,7 @@ import { sideEffectOutcome } from "../outcomes/index.js";
 import { finalizeOutput, type Output, outputMeta } from "../output.js";
 import type { CollectContext, Outcome } from "../output-spec.js";
 import { effectiveOutputSchemaOf } from "../stage-identity.js";
-import { type BranchEntry, readBranch } from "../transcript.js";
+import { type BranchEntry, classifyStop, readBranch } from "../transcript.js";
 import type { StageSessionContext, WorkflowSessionContext } from "../types.js";
 import {
 	DEFAULT_VALIDATION_RETRIES,
@@ -131,6 +138,13 @@ async function produceWithNudge(
 		);
 	} catch (e) {
 		return { kind: "fatal", message: `${first.message} (nudge failed: ${formatError(e)})` };
+	}
+	if (ctx.signal?.aborted) throw new WorkflowAbortError();
+	if (ctx.parked?.()) throw new WorkflowParkedError();
+	const nudgeStop = classifyStop(readBranch(ctx), collectCtx.branchOffset);
+	if (nudgeStop === "aborted") throw new WorkflowAbortError();
+	if (nudgeStop !== "stop") {
+		return { kind: "fatal", message: `${s.skill} collection nudge stopped (${nudgeStop})` };
 	}
 	const nudgedCtx: CollectContext = { ...collectCtx, branch: readBranch(ctx) };
 	const second = await attempt(nudgedCtx);
