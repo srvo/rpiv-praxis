@@ -197,7 +197,9 @@ Follow-up footer:
 
 **Next step:** `/skill:commit` — group the validated changes into atomic commits (skip if `verdict: fail` — fix the gaps first, then re-run `/skill:validate`).
 
-> 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+**Working directory:** `{absolute working directory}`
+Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the commit step above if `verdict: pass`. If `verdict: fail`, do not offer `next` to commit; ask which gap to address instead. No push is authorized.
+> After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
 
 ## Handle Follow-ups
 

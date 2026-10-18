@@ -5,7 +5,7 @@
  * so Pi excludes their descriptions from the system prompt (~3k tokens saved per
  * session, multiplied across workflow children). That also removes the model's
  * only map from user intent ("help me design this") to the stage commands. This
- * module buys that discoverability back for ~120 tokens: a hidden message listing
+ * module buys that discoverability back for a few hundred tokens: a hidden message listing
  * the commands so the agent can route the developer to `/skill:<name>` instead of
  * improvising the workflow itself.
  *
@@ -15,6 +15,7 @@
  * a steering item into overflow recovery and displace the interrupted task.
  */
 
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { FLAG_DEBUG, MSG_TYPE_PIPELINE_INDEX } from "./constants.js";
 
@@ -26,9 +27,14 @@ import { FLAG_DEBUG, MSG_TYPE_PIPELINE_INDEX } from "./constants.js";
  */
 export const PIPELINE_POINTER = [
 	"[rpiv pipeline index — reference material, NOT a task. The RPIV stage skills",
-	"are hidden from the skill list and run only when the developer explicitly",
-	"invokes /skill:<name>. Never start a stage yourself; when the user's request",
-	"matches one, point them at the command.]",
+	"are hidden from the skill list. Explicit /skill:<name> invocations run them.",
+	'Exception: a direct user message containing only standalone "next" approves',
+	"exactly one default skill from the most recent assistant handoff in this conversation.",
+	"Retain its exact command, arguments, and working directory; load and follow the actual skill.",
+	"If context is missing, ambiguous, stale, blocked, or the worktree differs from the active task, ask.",
+	'Never treat quoted "next" as approval, infer a newest artifact, or recover state after /new.',
+	"Never auto-chain. Otherwise point the user at the command; do not start a stage unasked.]",
+	`For handoff presentation and authorized next execution, read ${fileURLToPath(new URL("../../skills/_shared/next-handoff.md", import.meta.url))}.`,
 	"",
 	"Pipeline stages (in order): /skill:discover → /skill:research → /skill:design",
 	"(or /skill:explore to weigh approaches first) → /skill:plan or /skill:blueprint",

@@ -92,9 +92,11 @@ Replace the path below with your actual handoff file path before running.
 
 💬 Follow-up: describe extra context in chat to append to this handoff before chaining; re-run `/rpiv:create-handoff` for a fresh handoff document.
 
-**Next step:** `/rpiv:resume-handoff .rpiv/artifacts/handoffs/YYYY-MM-DD_HH-MM-SS_description.md` — pick up where this session left off in a fresh context.
+**Next step:** `/rpiv:resume-handoff .rpiv/artifacts/handoffs/YYYY-MM-DD_HH-MM-SS_description.md` — pick up where this session left off, preferably in a fresh context.
 
-> 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+**Working directory:** `{absolute working directory}`
+Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only resume-handoff above in this conversation, or use a fresh session for a clean context.
+> After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
 </template_response>
 
 ---

@@ -1,55 +1,49 @@
 ---
-title: "Reset between skills"
-description: "Run each skill in a fresh context. Why the artifact-on-disk handoff exists, and how to implement multi-phase plans."
+title: "Continue or reset between skills"
+description: "Say next for a single conversation-local handoff, or use the full command in a fresh context."
 section: "guides"
 order: 2
 ---
 
-The pipeline's design rests on one operational rule: **every skill boots with a clean context window**. Between any two skill invocations, run `/new` (or whatever your harness calls "clear context") before kicking off the next one.
+Each skill writes its output to `.rpiv/artifacts/<stage>/`, and the next skill reads it back. That artifact-on-disk handoff supports both continuing in the current conversation and starting with a clean context.
 
-The artifact-on-disk handoff exists precisely for this reason. Each skill writes its output to `.rpiv/artifacts/<stage>/`, and the next skill reads it back. The chain is durable, not stateful: your next session can pick up a half-finished run without losing context, because state lives in markdown files, not the chat window.
+## Continue with `next`
 
-Skipping the reset is the single most common cause of muddled output.
+A conversational handoff recommends one default next skill, prints its complete command, and records the absolute working directory. Reply with just `next` to approve that one recommendation. Research and explore default to design; blueprint remains an explicit alternative.
 
-## The reminder pattern
+The assistant loads and follows the actual skill with the displayed arguments, artifact path, phase scope, and worktree. It preserves checkpoints and verification gates, then stops at the next handoff. `next` is not permission to run the remaining pipeline or push changes.
 
-Every skill that hands off to a next step emits a reminder when it finishes:
+If the handoff is missing, ambiguous, stale, blocked, or points at a worktree different from the active task, the assistant asks instead of guessing. Quoted `next` is not approval. Failed validation never offers commit as an actionable next step.
 
-```
-🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
-```
+## Start a fresh context
 
-It applies to every transition in the chain, not just the one you just saw. (The lone exception is `commit`, the chain terminus: it has no next step to remind you about.) The tip is a polite nag; the rule is hard.
+A fresh context is still useful when a conversation is large or stage boundaries need stronger isolation. Copy the complete command and working directory from the handoff, run `/new` (or your harness's clear-context command), and invoke the command from that directory.
 
-## When NOT to reset
+`next` is conversation-local: it has no persisted pending-stage state and does not recover a prior conversation after `/new`. The artifact is durable; the shortcut is not.
 
-One case: **within a single skill invocation**. Several skills run multi-turn work inside one call. `discover` runs a one-question-at-a-time interview, `code-review` dispatches parallel specialist agents, and `blueprint`, `research`, and `explore` each run their own internal checkpoint loops. The reset rule applies between skill *invocations*, never within them.
-
-Every other transition resets. That includes phase-by-phase `/skill:implement` (see below).
+Do not reset within a skill invocation. Interviews, review fanouts, and internal checkpoint loops belong to that skill and retain their own context. Detached `/wf` runs continue to follow their configured session policies; this conversational shortcut does not change workflow routing.
 
 ## Implementing a multi-phase plan
 
-If your plan has a single phase or is small enough to land in one shot, run:
+For a small plan, an explicit command without a phase executes all phases in one invocation:
 
-```
+```text
 /skill:implement .rpiv/artifacts/plans/<plan>.md
 ```
 
-This executes every phase in a single invocation. One session, one pass, done.
+For larger plans, use one phase at a time:
 
-For larger plans with multiple phases, run **one phase per session** with a reset between every phase:
-
-```
+```text
 /skill:implement .rpiv/artifacts/plans/<plan>.md Phase 1
 ```
 
-Then `/new` to reset the context, review the diff, and run the next phase in a fresh session:
+A plan handoff recommending `Phase 1` retains that scope when you say `next`; it never silently drops the phase argument. To run a later phase, explicitly select it, optionally in a fresh session:
 
-```
+```text
 /skill:implement .rpiv/artifacts/plans/<plan>.md Phase 2
 ```
 
-The plan artifact carries state between phases. It tracks `- [x]` completion markers as each success criterion lands, so a fresh context per phase keeps the agent focused on the slice in front of it instead of dragging accumulated chat noise from earlier phases.
+The plan's completion markers carry implementation state between sessions. The next recommendation still follows the skill's actual handoff: for example, a completed in-scope implementation hands off to validation rather than automatically starting a sibling phase.
 
 ## Next steps
 

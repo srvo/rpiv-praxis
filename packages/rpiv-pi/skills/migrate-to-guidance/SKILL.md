@@ -99,7 +99,9 @@ The migration relocates files from in-place `CLAUDE.md` to `.rpiv/guidance/{path
 
      **Next step:** `/skill:annotate-guidance` — refresh or extend annotations now that the guidance tree owns them (skip if no further annotation is planned).
 
-     > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+     **Working directory:** `{absolute working directory}`
+     Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the annotation step above if further annotation is planned; otherwise omit this offer.
+     > After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
      ```
 
 ## Important notes:

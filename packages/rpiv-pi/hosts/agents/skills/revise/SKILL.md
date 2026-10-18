@@ -191,7 +191,9 @@ Use the `ask_user_question` tool to confirm before editing. Question: "{Summary 
 
    **Next step:** `/implement .rpiv/artifacts/plans/{filename}.md Phase {N}` — resume execution at the affected phase (or omit `Phase {N}` to run all phases sequentially).
 
-   > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+   **Working directory:** `{absolute working directory}`
+   Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the next step above in this conversation; preserve `Phase {N}`, all other arguments, and this working directory.
+   > After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
    ```
 
 ### Step 6: Handle Follow-ups

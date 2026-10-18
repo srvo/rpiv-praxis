@@ -134,7 +134,9 @@ Please review the diff and let me know if anything should reopen a phase.
 
 **Next step:** `/validate .rpiv/artifacts/plans/{filename}.md` — verify the implementation against the plan's success criteria before committing.
 
-> 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+**Working directory:** `{absolute working directory}`
+Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the next step above in this conversation; keep its exact command, arguments, and working directory.
+> After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
 ```
 
 If the run was paused mid-plan rather than completed, print the **paused** variant instead:
@@ -154,7 +156,9 @@ Please review what landed and let me know if anything needs to change before res
 
 **Next step:** `/create-handoff` — capture in-flight state so the next session can resume cleanly via `/resume-handoff`.
 
-> 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+**Working directory:** `{absolute working directory}`
+Reply `next` ([handoff rules](../_shared/next-handoff.md)) to create only the handoff above, not to skip blockers or resume implementation automatically.
+> After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
 ```
 
 ## Handle Follow-ups

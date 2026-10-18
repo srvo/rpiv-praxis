@@ -493,7 +493,9 @@ The 8-column header is retained when only one source returns; only rows from the
 
    **Next step:** `/implement .rpiv/artifacts/plans/{filename}.md Phase 1` — start execution at Phase 1 (omit `Phase 1` to run all phases sequentially).
 
-   > 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+   **Working directory:** `{absolute working directory}`
+   Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the next step above in this conversation; preserve `Phase 1`, all other arguments, and this working directory.
+   > After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
    ```
 
 ### Step 10: Handle Follow-ups

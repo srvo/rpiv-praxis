@@ -355,11 +355,12 @@ Please review and let me know if you have follow-up questions.
 
 💬 Follow-up: describe the change in chat to append a timestamped Follow-up section to this artifact. Re-run `/skill:research` for a fresh artifact.
 
-**Next step (choose one):**
-- `/skill:design .rpiv/artifacts/research/{filename}.md` — iterative design with vertical-slice decomposition (produces design artifact for plan)
-- `/skill:blueprint .rpiv/artifacts/research/{filename}.md` — lightweight fast path for smaller tasks; combined design + phased plan in one pass (produces implement-ready plan directly)
+**Next step (default):** `/skill:design .rpiv/artifacts/research/{filename}.md` — iterative design with vertical-slice decomposition (produces design artifact for plan).
+**Alternative:** `/skill:blueprint .rpiv/artifacts/research/{filename}.md` — explicitly choose this lightweight combined design/plan route for smaller tasks.
 
-> 🆕 Tip: start a fresh session with `/new` first — chained skills work best with a clean context window.
+**Working directory:** `{absolute working directory}`
+Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the default next step above in this conversation; keep its exact command, arguments, and working directory. The alternative requires an explicit choice.
+> After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
 ```
 
 ### Step 6: Handle Follow-ups
