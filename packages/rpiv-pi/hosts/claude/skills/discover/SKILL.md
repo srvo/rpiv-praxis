@@ -187,13 +187,15 @@ Compile interview output into the FRD. The interview's logical order (problem �
 
    💬 Follow-up: discover writes a fresh FRD per call — re-invoke `/rpiv:discover` to iterate (the prior FRD stays unchanged on disk).
 
+   ```
+
    **Next step:** `/rpiv:research .rpiv/artifacts/discover/<YYYY-MM-DD_HH-MM-SS>_<topic>.md` — ground the intent in codebase reality.
 
    **Working directory:** `{absolute working directory}`
-   Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the next step above in this conversation; keep its exact command, arguments, and working directory.
-   > After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
-   ```
-
+**Input artifact:** `{absolute path to .rpiv/artifacts/discover/<filename>.md}`
+**Branch:** `{current symbolic branch}`
+**Kata issue:** `{qualified project#ref}`
+Reply /next to run only the step above in a fresh session.
 ### Step 8: Handle Follow-ups
 
 - **Fresh artifact per call, no in-place append.** Discover deliberately writes a NEW timestamp-distinct FRD on every invocation — there is no `## Follow-up` append mode. The prior FRD stays unchanged on disk.

@@ -61,6 +61,14 @@ Prefer one stage at a time? Every skill also stands alone:
 /skill:implement .rpiv/artifacts/plans/<latest>.md
 ```
 
+## Continue one approved stage
+
+Reply `next` to approve the latest conversational handoff without resetting. Use `/next` for a fresh Pi session when the latest assistant footer includes the exact command, working directory, input artifact, branch, qualified Kata issue, and `/next` approval marker. Arguments such as quoted paths and `Phase 1` are preserved; only that one stage is submitted.
+
+`/next` requires an idle, trusted session in the matching worktree, an open/ready registered issue, and no running detached lane. Dirty continuation is allowed. Missing/legacy metadata or a wrong directory requires a refreshed footer or the full manual command. A veto permits retry; unknown delivery does not — inspect session history before resubmitting. No commit, push, installation, or later stage is authorized by a handoff.
+
+See the [next handoff contract](../../docs/next-handoff.md) for recovery details. Source verification and installed delivery are separate: this source change does not establish availability in an already-installed Pi package. Installation/reload and installed-host verification require separate approval.
+
 ## What you get
 
 - **Reviewable artifacts instead of one long turn** — every skill declares a contract

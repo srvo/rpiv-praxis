@@ -417,12 +417,15 @@ Present the design artifact location to the developer:
 
    💬 Follow-up: describe the change in chat to append a timestamped Follow-up section to this artifact. Re-run `/skill:design` for a fresh artifact.
 
+   ```
+
    **Next step:** `/skill:plan .rpiv/artifacts/designs/{filename}.md` — sequence the design into implementation phases (slice ≡ phase, 1:1) and run the artifact reviewer pair.
 
    **Working directory:** `{absolute working directory}`
-   Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the next step above in this conversation; keep its exact command, arguments, and working directory.
-   > After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
-   ```
+**Input artifact:** `{absolute path to .rpiv/artifacts/designs/<filename>.md}`
+**Branch:** `{current symbolic branch}`
+**Kata issue:** `{qualified project#ref}`
+Reply /next to run only the step above in a fresh session.
 
 ### Step 9: Handle Follow-ups
 
