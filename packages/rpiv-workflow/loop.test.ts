@@ -139,7 +139,7 @@ const writeVerdict = (n: number, isDone: boolean): string => {
 
 const readRows = (): Array<Record<string, unknown>> => {
 	const dir = join(tmpDir, ".rpiv", "workflows", "runs");
-	const files = readdirSync(dir);
+	const files = readdirSync(dir).filter((file) => file.endsWith(".jsonl"));
 	expect(files).toHaveLength(1);
 	const lines = readFileSync(join(dir, files[0]!), "utf-8").trim().split("\n");
 	return lines.slice(1).map((l) => JSON.parse(l));
@@ -2154,7 +2154,7 @@ describe("loop driver — preflights", () => {
 		});
 
 		expect(result.success).toBe(false);
-		expect(result.error).toMatch(/cannot combine loop with sessionPolicy "continue"/);
+		expect(result.error).toMatch(/cannot combine a loop with sessionPolicy "continue"/);
 	});
 });
 

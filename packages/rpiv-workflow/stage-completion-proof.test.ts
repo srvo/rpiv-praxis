@@ -23,6 +23,7 @@ const PATH_RE = /\.rpiv\/artifacts\/[\w-]+\/[\w.-]+\.md/g;
 
 /** Transcript-only outcome: the last announced path wins, no disk read. */
 const announced: Outcome = {
+	name: "announced",
 	collector: {
 		collect: (ctx) => {
 			const start = Math.max(ctx.branchOffset ?? 0, 0);

@@ -81,8 +81,8 @@ export function createRunParking(opts: {
 			opts.notify(`parked ${asked ?? "stage"}: ${park.questions[0]?.question ?? "a question"}`);
 			opts.stop();
 		},
-		answerFor(prompt) {
-			const park = runId ? answeredParkFor(opts.cwd, runId, prompt) : undefined;
+		answerFor(stageKey) {
+			const park = runId && stageKey ? answeredParkFor(opts.cwd, runId, stageKey) : undefined;
 			if (!park || !runId) return undefined;
 			const id = runId;
 			return {

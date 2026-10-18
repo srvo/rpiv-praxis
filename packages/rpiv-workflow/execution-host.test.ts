@@ -50,6 +50,27 @@ describe("execution-host seam", () => {
 		registerWorkflowExecutionHost(second);
 		expect(getWorkflowExecutionProvider()).toBe(second);
 	});
+	it("out-of-order disposal never restores a provider whose registration was disposed", () => {
+		const first = fakeProvider();
+		const second = fakeProvider();
+		const disposeFirst = registerWorkflowExecutionHost(first);
+		const disposeSecond = registerWorkflowExecutionHost(second);
+		disposeFirst();
+		expect(getWorkflowExecutionProvider()).toBe(second);
+		disposeSecond();
+		expect(getWorkflowExecutionProvider()).toBeUndefined();
+	});
+	it("supports top-first and repeated disposal without disturbing the live predecessor", () => {
+		const first = fakeProvider();
+		const second = fakeProvider();
+		const disposeFirst = registerWorkflowExecutionHost(first);
+		const disposeSecond = registerWorkflowExecutionHost(second);
+		disposeSecond();
+		disposeSecond();
+		expect(getWorkflowExecutionProvider()).toBe(first);
+		disposeFirst();
+		expect(getWorkflowExecutionProvider()).toBeUndefined();
+	});
 
 	it("__resetWorkflowExecutionHost clears the slot", () => {
 		registerWorkflowExecutionHost(fakeProvider());

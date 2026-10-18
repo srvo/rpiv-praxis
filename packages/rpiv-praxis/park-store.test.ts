@@ -55,13 +55,27 @@ describe("park store", () => {
 		expect(openParks(join(cwd, "missing"))).toEqual([]);
 	});
 
-	it("finds only an answered park with the same stage prompt", () => {
+	it("matches answered parks by stable stage identity, independent of prompt text, and consumes repeated parks in order", () => {
+		const cwd = project();
+		addPark(cwd, { ...base, stage: "build (phase-1)", prompt: "the first prompt" });
+		addPark(cwd, { ...base, stage: "build (phase-1)", prompt: "a repeated prompt" });
+		addPark(cwd, { ...base, stage: "review", prompt: "the first prompt" });
+		updatePark(cwd, "r1", 2, { status: "answered", answer: "answer-2" });
+		updatePark(cwd, "r1", 3, { status: "answered", answer: "answer-3" });
+		expect(answeredParkFor(cwd, "r1", "build (phase-1)")).toBeUndefined();
+		updatePark(cwd, "r1", 1, { status: "answered", answer: "answer-1" });
+		expect(answeredParkFor(cwd, "r1", "build (phase-1)")?.n).toBe(1);
+		updatePark(cwd, "r1", 1, { status: "resumed" });
+		expect(answeredParkFor(cwd, "r1", "build (phase-1)")?.n).toBe(2);
+		expect(answeredParkFor(cwd, "r1", "other-stage")).toBeUndefined();
+	});
+	it("finds only an answered park with the same stage identity", () => {
 		const cwd = project();
 		addPark(cwd, base);
-		expect(answeredParkFor(cwd, "r1", "/skill:pick")).toBeUndefined();
+		expect(answeredParkFor(cwd, "r1", "pick")).toBeUndefined();
 		updatePark(cwd, "r1", 1, { status: "answered", answer: "Blue" });
-		expect(answeredParkFor(cwd, "r1", "/skill:other")).toBeUndefined();
-		expect(answeredParkFor(cwd, "r1", "/skill:pick")?.answer).toBe("Blue");
+		expect(answeredParkFor(cwd, "r1", "other")).toBeUndefined();
+		expect(answeredParkFor(cwd, "r1", "pick")?.answer).toBe("Blue");
 		expect(updatePark(cwd, "r1", 9, { answer: "x" })).toBeUndefined();
 	});
 

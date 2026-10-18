@@ -387,8 +387,8 @@ describe("ClaudeWorkflowHost — parking", () => {
 			answerFor: vi.fn(() => ({ sessionId: "parked-s", message: "Answer: Blue", delivered })),
 		});
 		const sdk = fakeSdk([() => [say("parked-s", "painted blue"), result("parked-s")]]);
-		const { child } = await run(host(sdk.deps, { parking }).h);
-		expect(parking.answerFor).toHaveBeenCalledWith("/skill:plan do it");
+		const { child } = await run(host(sdk.deps, { parking }).h, { stage: "plan" });
+		expect(parking.answerFor).toHaveBeenCalledWith("plan");
 		expect(sdk.calls[0]).toMatchObject({ prompt: "Answer: Blue", options: { resume: "parked-s" } });
 		expect(delivered).toHaveBeenCalledOnce();
 		expect(child.sessionManager.getSessionId()).toBe("parked-s");

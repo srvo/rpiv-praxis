@@ -5,9 +5,15 @@
  * dynamically imports your definitions so they build on first `/wf`, not startup.
  */
 
+import type { WorkflowExecutionProvider } from "./execution-host.js";
+import { registerWorkflowExecutionHost as registerExecutionHost } from "./execution-host.js";
+
 export { registerBuiltIns, registerBuiltInsProvider } from "./built-ins.js";
 export { registerLifecycle } from "./events.js";
-export { registerWorkflowExecutionHost } from "./execution-host.js";
+
+export function registerWorkflowExecutionHost(provider: WorkflowExecutionProvider): () => void {
+	return registerExecutionHost(provider);
+}
 export {
 	getBucketKindMappings,
 	registerBucketKindMapping,

@@ -94,6 +94,40 @@ describe("createWorkflowExecution — focus-gated abort tap + lane lifecycle", (
 		// dispose is now a wrapper (unsub + evictRun), not identity-equal to unsub.
 		expect(typeof exec.dispose).toBe("function");
 	});
+	it("does not record a running lane if terminal-input subscription throws", () => {
+		const onTerminalInput = vi.fn(() => {
+			throw new Error("tap unavailable");
+		});
+		const ui = { onTerminalInput, notify: vi.fn(), setStatus: vi.fn() } as unknown as ExtensionUIContext;
+		captureSession(ui);
+		const observer = createMockCommandCtx({ hasUI: true });
+
+		expect(() =>
+			createWorkflowExecution(observer, {
+				runId: "run-failed-subscribe",
+				childSessionsDir: "/tmp/run-failed-subscribe/sessions",
+			}),
+		).toThrow("tap unavailable");
+		expect(getLane("run-failed-subscribe")).toBeUndefined();
+	});
+
+	it("retires the lane even if terminal-input unsubscribe throws", () => {
+		const { ui, unsub } = makeSpyUi();
+		unsub.mockImplementation(() => {
+			throw new Error("unsubscribe failed");
+		});
+		captureSession(ui);
+		const observer = createMockCommandCtx({ hasUI: true });
+		const exec = createWorkflowExecution(observer, {
+			runId: "run-failed-unsubscribe",
+			childSessionsDir: "/tmp/run-failed-unsubscribe/sessions",
+		});
+		const log = vi.spyOn(console, "error").mockImplementation(() => {});
+
+		expect(() => exec.dispose?.()).not.toThrow();
+		expect(getLane("run-failed-unsubscribe")?.status).toBe("aborted");
+		expect(log).toHaveBeenCalledOnce();
+	});
 
 	it("records the lane at build under its name; dispose unsubscribes the tap and retires a still-running lane", () => {
 		const { ui, unsub } = makeSpyUi();

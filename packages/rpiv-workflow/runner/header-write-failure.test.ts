@@ -25,7 +25,7 @@ vi.mock("../state/writes.js", async (importOriginal) => {
 const tinyWorkflow: Workflow = {
 	name: "tiny",
 	start: "research",
-	stages: { research: { kind: "produces", sessionPolicy: "fresh" } },
+	stages: { research: { kind: "side-effect", sessionPolicy: "fresh" } },
 	edges: { research: "stop" },
 };
 
