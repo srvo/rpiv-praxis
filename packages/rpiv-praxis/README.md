@@ -47,18 +47,29 @@ handshake work from any directory.
 rpiv-wf list                                          # workflows (in the current project)
 rpiv-wf run ship "add a --json flag to the export command"
 rpiv-wf resume <run-id|name>
+rpiv-wf runs                                           # aliases available across this repo's worktrees
+rpiv-wf progress                                     # all authoring topics + linked Kata issues across local worktrees
+rpiv-wf progress --json                               # machine-readable handoff snapshot
 rpiv-wf inbox                                         # questions runs are waiting on
 rpiv-wf answer <run-id|name> <n> <choice>
 rpiv-wf steps                                         # skills that run as single steps
 rpiv-wf step research "how does token refresh work?"
 ```
 
+
+Runs and their artifacts stay in the worktree where they started. RPIV records named runs in a small registry under Git's shared directory, so `rpiv-wf runs` and `rpiv-wf resume <alias>` work from sibling worktrees; resume continues in the original worktree. Keep that worktree until the run is complete. No artifacts are copied or committed.
+
+Alias admission is exclusive across worktrees. An occupied claim or stale alias refuses the start; choose a new `--name`, or inspect the reported claim path and originating process/worktree before explicitly repairing it. Claims are never stolen automatically. A non-Git run stays local and does not advertise a shared alias.
+
+Fresh and resumed execution hold the same per-run lease, so resuming a still-running workflow refuses before stage dispatch. This prevents overlapping execution, not exactly-once external actions after a crash: side-effecting stages still need their own idempotency keys or transactions.
+
+`rpiv-wf progress` is separate from execution-run status: it scans authoring artifacts across reachable linked worktrees, maps artifact evidence onto discover → research → design → plan → implement → validate, and links explicit Kata references. `●` means an artifact was observed; `○` means none was found (not proof a stage is incomplete). It emits handoff-ready overlap and stale-task candidates only; the command never changes Kata issues. Use `--json` for deterministic machine-readable output. If Kata is unavailable, the partial report says so and exits nonzero.
 Without the global install, `rpiv-wf` is
 `node <checkout>/packages/rpiv-praxis/bin/rpiv-wf.mjs`.
 
 | Flag | Default | |
 | --- | --- | --- |
-| `--name <name>` | workflow name | name the run; resume it by name |
+| `--name <name>` | auto RPIV alias | override the generated `rpiv-<workflow>-<topic>-<timestamp>-<suffix>` alias |
 | `--model <id>` | Claude Code's | default model for every stage (`haiku`, `sonnet`, `claude-opus-5-5`, …); a pack's `models.stages` pin overrides it |
 | `--concurrency <n>` | `4` | parallel fan-out units |
 | `--permission-mode <mode>` | `auto` | Claude Code permission mode for each stage |
