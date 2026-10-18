@@ -355,7 +355,13 @@ function repairResultsTail(outDir: string): void {
 	const contents = readFileSync(file, "utf8");
 	if (!contents || contents.endsWith("\n")) return;
 	const lastNewline = contents.lastIndexOf("\n");
-	writeFileSync(file, lastNewline < 0 ? "" : contents.slice(0, lastNewline + 1));
+	const tail = contents.slice(lastNewline + 1);
+	try {
+		JSON.parse(tail);
+		writeFileSync(file, `${contents}\n`);
+	} catch {
+		writeFileSync(file, lastNewline < 0 ? "" : contents.slice(0, lastNewline + 1));
+	}
 }
 
 export async function runEval(
@@ -387,6 +393,7 @@ export async function runEval(
 	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 	const outDir =
 		opts.continueDir ?? resolve(opts.outDir ?? join(dirname(specFile!), "eval-results"), `${spec.name}-${stamp}`);
+	if (!opts.dryRun) repairResultsTail(outDir);
 	const done = recorded(outDir);
 	const trials = plan(spec, outDir);
 	const todo = trials.filter((t) => !done.has(`${t.variant.name}#${t.repeat}`));
@@ -398,7 +405,6 @@ export async function runEval(
 	if (opts.dryRun) return 0;
 	const deps = opts.deps ?? nodeEvalDeps();
 	mkdirSync(outDir, { recursive: true });
-	repairResultsTail(outDir);
 	opts.out(`results: ${outDir}`);
 	if (!saved)
 		writeFileSync(join(outDir, "spec.json"), `${JSON.stringify({ ...spec, fixtureDir: fixture }, null, "\t")}\n`);

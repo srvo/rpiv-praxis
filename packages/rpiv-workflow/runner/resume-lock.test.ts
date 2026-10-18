@@ -44,4 +44,9 @@ describe("per-run resume lock", () => {
 		utimesSync(ownerFile, old, old);
 		expect(() => acquireResumeLock(cwd, "run-3")).toThrow(ResumeAlreadyRunningError);
 	});
+	it("rejects traversal run IDs before creating a lock path", () => {
+		setup();
+		expect(() => acquireResumeLock(cwd, "../../../../outside")).toThrow(/invalid workflow run ID/);
+		expect(() => readFileSync(join(cwd, "outside.resume-lock", "owner.json"))).toThrow();
+	});
 });
