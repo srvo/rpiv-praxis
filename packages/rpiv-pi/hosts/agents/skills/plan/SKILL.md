@@ -312,12 +312,15 @@ The 8-column header is retained when only one source returns; only rows from the
 
    💬 Follow-up: describe the change in chat to append a timestamped Follow-up section to this artifact, or use `/revise <plan-path>` for surgical phase edits. Re-run `/plan` for a fresh artifact.
 
+   ```
+
    **Next step:** `/implement .rpiv/artifacts/plans/{filename}.md Phase 1` — start execution at Phase 1 (omit `Phase 1` to run all phases sequentially).
 
    **Working directory:** `{absolute working directory}`
-   Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the next step above in this conversation; preserve `Phase 1`, all other arguments, and this working directory.
-   > After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
-   ```
+**Input artifact:** `{absolute path to .rpiv/artifacts/plans/<filename>.md}`
+**Branch:** `{current symbolic branch}`
+**Kata issue:** `{qualified project#ref}`
+Reply /next to run only the step above in a fresh session.
 
 ### Step 6: Handle Follow-ups
 

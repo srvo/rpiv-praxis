@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { PIPELINE_POINTER } from "./pipeline-pointer.js";
+import { PIPELINE_POINTER, RPIV_STAGE_NAMES } from "./pipeline-pointer.js";
 
 const skillText = (name: string) =>
 	readFileSync(fileURLToPath(new URL(`../../skills/${name}/SKILL.md`, import.meta.url)), "utf8");
@@ -42,13 +42,51 @@ describe("conversation-local next authorization", () => {
 	]) {
 		it(`${name} offers next, the exact worktree, and a fresh-session fallback`, () => {
 			const text = skillText(name);
-			expect(text).toContain("Reply `next`");
-			expect(text).toContain("**Working directory:** `{absolute working directory}`");
-			expect(text).toContain("After `/new`, use the full command above");
+			expect(text).toContain("**Working directory:**");
 			expect(text).not.toContain("start a fresh session with `/new` first");
-			expect(text).toContain("[handoff rules](../_shared/next-handoff.md)");
 		});
 	}
+
+	it("emits the exact /next metadata only for actionable public-stage defaults, outside fences", () => {
+		expect(RPIV_STAGE_NAMES).toEqual([
+			"discover",
+			"research",
+			"design",
+			"explore",
+			"plan",
+			"blueprint",
+			"implement",
+			"validate",
+		]);
+		for (const name of [
+			"discover",
+			"research",
+			"explore",
+			"design",
+			"plan",
+			"blueprint",
+			"implement",
+			"architecture-review",
+			"code-review",
+			"revise",
+		]) {
+			const text = skillText(name);
+			const marker = "Reply /next to run only the ";
+			const index = text.indexOf(marker);
+			expect(index).toBeGreaterThanOrEqual(0);
+			expect((text.slice(0, index).split("```").length - 1) % 2).toBe(0);
+			expect(text.match(/^Reply \/next to run only the /gm)?.length).toBe(1);
+			for (const field of [
+				"**Next step",
+				"**Working directory:**",
+				"**Input artifact:**",
+				"**Branch:**",
+				"**Kata issue:**",
+			]) {
+				expect(text).toContain(field);
+			}
+		}
+	});
 
 	it("research chooses design by default while preserving blueprint as an explicit alternative", () => {
 		const text = skillText("research");
@@ -76,5 +114,11 @@ describe("conversation-local next authorization", () => {
 
 	it("does not remove the failed-validation gate", () => {
 		expect(skillText("validate")).toContain("skip if `verdict: fail`");
+	});
+
+	it("keeps native /next separate from conversational approval and completion", () => {
+		expect(PIPELINE_POINTER).toContain("user-issued /next command");
+		expect(PIPELINE_POINTER).toContain("do not emulate it");
+		expect(PIPELINE_POINTER).toContain("receipt as stage completion");
 	});
 });

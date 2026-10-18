@@ -8,7 +8,10 @@ import { parseSkillInvocation, registerSkillBracket } from "./skill-bracket.ts";
 const BASELINE_MODEL = { provider: "anthropic", id: "baseline" };
 
 interface Handlers {
-	input?: (event: { text?: string; source?: string }) => Promise<{ action: string }> | { action: string };
+	input?: (
+		event: { text?: string; source?: string },
+		ctx?: { sessionManager?: { getEntries: () => unknown[]; getSessionId?: () => string | undefined } },
+	) => Promise<{ action: string }> | { action: string };
 	agent_end?: (event?: unknown) => Promise<unknown> | unknown;
 	session_start?: (event: unknown, ctx: unknown) => Promise<unknown> | unknown;
 }
@@ -16,16 +19,18 @@ interface Handlers {
 function makePi(opts: { setModelResult?: boolean; baselineThinking?: string } = {}) {
 	const handlers: Handlers = {};
 	const setModel = vi.fn(async () => opts.setModelResult ?? true);
+	const appendEntry = vi.fn();
 	const setThinkingLevel = vi.fn();
 	const pi = {
 		on: vi.fn((event: string, h: (...args: unknown[]) => unknown) => {
 			(handlers as Record<string, unknown>)[event] = h;
 		}),
 		setModel,
+		appendEntry,
 		setThinkingLevel,
 		getThinkingLevel: vi.fn(() => opts.baselineThinking ?? "medium"),
 	} as unknown as ExtensionAPI;
-	return { pi, setModel, setThinkingLevel, handlers };
+	return { pi, setModel, appendEntry, setThinkingLevel, handlers };
 }
 
 function writeModels(config: unknown) {

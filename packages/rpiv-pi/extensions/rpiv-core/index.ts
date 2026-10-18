@@ -13,20 +13,21 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { FLAG_DEBUG } from "./constants.ts";
-import { registerLaneProgressHook } from "./lane-progress.ts";
-import { registerLaneSwitcher } from "./lane-switcher.ts";
-import { registerModelsConfigValidation } from "./models-config-validate.ts";
-import { registerBuiltInWorkflows } from "./register-built-in-workflows.ts";
-import { registerRpivModelsCommand } from "./rpiv-models/index.ts";
-import { registerSessionCapture } from "./session-capture.ts";
-import { registerSessionHooks } from "./session-hooks.ts";
-import { registerSetupCommand } from "./setup-command.ts";
-import { registerSkillBracket } from "./skill-bracket.ts";
-import { registerSkillContractsSource, registerUserSkillContractsSource } from "./skill-contracts-source.ts";
-import { registerUpdateAgentsCommand } from "./update-agents-command.ts";
-import { registerWorkflowExecutionHostProviderHook } from "./workflow-execution-host.ts";
-import { registerWorkflowQuestionWarpBridgeHook } from "./workflow-question-warp-bridge.ts";
+import { FLAG_DEBUG } from "./constants.js";
+import { registerLaneProgressHook } from "./lane-progress.js";
+import { registerLaneSwitcher } from "./lane-switcher.js";
+import { registerModelsConfigValidation } from "./models-config-validate.js";
+import { registerNextCommand } from "./next-command.js";
+import { registerBuiltInWorkflows } from "./register-built-in-workflows.js";
+import { registerRpivModelsCommand } from "./rpiv-models/index.js";
+import { registerSessionCapture } from "./session-capture.js";
+import { registerSessionHooks } from "./session-hooks.js";
+import { registerSetupCommand } from "./setup-command.js";
+import { registerSkillBracket } from "./skill-bracket.js";
+import { registerSkillContractsSource, registerUserSkillContractsSource } from "./skill-contracts-source.js";
+import { registerUpdateAgentsCommand } from "./update-agents-command.js";
+import { registerWorkflowExecutionHostProviderHook } from "./workflow-execution-host.js";
+import { registerWorkflowQuestionWarpBridgeHook } from "./workflow-question-warp-bridge.js";
 
 export default function (pi: ExtensionAPI) {
 	pi.registerFlag(FLAG_DEBUG, {
@@ -76,6 +77,7 @@ export default function (pi: ExtensionAPI) {
 	// `input` + `agent_end` handlers are independent of rpiv-workflow's
 	// presence — they read models.json directly.
 	registerSkillBracket(pi);
+	registerNextCommand(pi);
 	// These rpiv-workflow-dependent registrars each dynamically
 	// `import("@juicesharp/rpiv-workflow")` (or its `/startup` sub-entry). Firing
 	// them concurrently makes jiti (Pi's dev loader) hand the second caller a

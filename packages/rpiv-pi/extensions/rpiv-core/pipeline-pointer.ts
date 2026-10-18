@@ -25,6 +25,21 @@ import { FLAG_DEBUG, MSG_TYPE_PIPELINE_INDEX } from "./constants.ts";
  * pipeline stages, other explicit-only commands, and workflow-internal fanout
  * units the agent must never suggest.
  */
+export const RPIV_STAGE_NAMES = [
+	"discover",
+	"research",
+	"design",
+	"explore",
+	"plan",
+	"blueprint",
+	"implement",
+	"validate",
+] as const;
+
+const [discover, research, design, explore, plan, blueprint, implement, validate] = RPIV_STAGE_NAMES.map(
+	(name) => `/skill:${name}`,
+);
+
 export const PIPELINE_POINTER = [
 	"[rpiv pipeline index — reference material, NOT a task. The RPIV stage skills",
 	"are hidden from the skill list. Explicit /skill:<name> invocations run them.",
@@ -33,12 +48,14 @@ export const PIPELINE_POINTER = [
 	"Retain its exact command, arguments, and working directory; load and follow the actual skill.",
 	"If context is missing, ambiguous, stale, blocked, or the worktree differs from the active task, ask.",
 	'Never treat quoted "next" as approval, infer a newest artifact, or recover state after /new.',
-	"Never auto-chain. Otherwise point the user at the command; do not start a stage unasked.]",
+	"Never auto-chain. Otherwise point the user at the command; do not start a stage unasked.",
+	"The user-issued /next command separately validates an actionable footer and replaces the session;",
+	"do not emulate it, infer its missing metadata, or treat a receipt as stage completion.]",
 	`For handoff presentation and authorized next execution, read ${fileURLToPath(new URL("../../skills/_shared/next-handoff.md", import.meta.url))}.`,
 	"",
-	"Pipeline stages (in order): /skill:discover → /skill:research → /skill:design",
-	"(or /skill:explore to weigh approaches first) → /skill:plan or /skill:blueprint",
-	"→ /skill:implement → /skill:validate",
+	`Pipeline stages (in order): ${discover} → ${research} → ${design}`,
+	`(or ${explore} to weigh approaches first) → ${plan} or ${blueprint}`,
+	`→ ${implement} → ${validate}`,
 	"Other explicit-only commands: /skill:slice, /skill:revise, /skill:elaborate,",
 	"/skill:architecture-review, /skill:frontend-design",
 	"Workflow-internal (dispatched by lanes — never suggest): amend, design-slice,",

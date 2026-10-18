@@ -355,13 +355,16 @@ Please review and let me know if you have follow-up questions.
 
 💬 Follow-up: describe the change in chat to append a timestamped Follow-up section to this artifact. Re-run `/skill:research` for a fresh artifact.
 
+```
+
 **Next step (default):** `/skill:design .rpiv/artifacts/research/{filename}.md` — iterative design with vertical-slice decomposition (produces design artifact for plan).
 **Alternative:** `/skill:blueprint .rpiv/artifacts/research/{filename}.md` — explicitly choose this lightweight combined design/plan route for smaller tasks.
 
 **Working directory:** `{absolute working directory}`
-Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the default next step above in this conversation; keep its exact command, arguments, and working directory. The alternative requires an explicit choice.
-> After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
-```
+**Input artifact:** `{absolute path to .rpiv/artifacts/research/<filename>.md}`
+**Branch:** `{current symbolic branch}`
+**Kata issue:** `{qualified project#ref}`
+Reply /next to run only the default next step above in a fresh session.
 
 ### Step 6: Handle Follow-ups
 

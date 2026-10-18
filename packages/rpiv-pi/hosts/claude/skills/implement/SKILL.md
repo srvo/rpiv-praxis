@@ -133,12 +133,15 @@ Please review the diff and let me know if anything should reopen a phase.
 
 💬 Follow-up: surface code/plan mismatches inline via the `AskUserQuestion` flow ("Follow the plan / Skip this change / Update the plan") — that is implement's only in-skill follow-up surface. For plan-level changes run `/rpiv:revise <plan-path>`; for session pauses run `/rpiv:create-handoff`.
 
+```
+
 **Next step:** `/rpiv:validate .rpiv/artifacts/plans/{filename}.md` — verify the implementation against the plan's success criteria before committing.
 
 **Working directory:** `{absolute working directory}`
-Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the next step above in this conversation; keep its exact command, arguments, and working directory.
-> After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
-```
+**Input artifact:** `{absolute path to .rpiv/artifacts/plans/<filename>.md}`
+**Branch:** `{current symbolic branch}`
+**Kata issue:** `{qualified project#ref}`
+Reply /next to run only the step above in a fresh session.
 
 If the run was paused mid-plan rather than completed, print the **paused** variant instead:
 
