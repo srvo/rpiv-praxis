@@ -17,6 +17,7 @@ import { FLAG_DEBUG } from "./constants.js";
 import { registerLaneProgressHook } from "./lane-progress.js";
 import { registerLaneSwitcher } from "./lane-switcher.js";
 import { registerModelsConfigValidation } from "./models-config-validate.js";
+import { registerNextCommand } from "./next-command.js";
 import { registerBuiltInWorkflows } from "./register-built-in-workflows.js";
 import { registerRpivModelsCommand } from "./rpiv-models/index.js";
 import { registerSessionCapture } from "./session-capture.js";
@@ -76,6 +77,7 @@ export default function (pi: ExtensionAPI) {
 	// `input` + `agent_end` handlers are independent of rpiv-workflow's
 	// presence — they read models.json directly.
 	registerSkillBracket(pi);
+	registerNextCommand(pi);
 	// These rpiv-workflow-dependent registrars each dynamically
 	// `import("@juicesharp/rpiv-workflow")` (or its `/startup` sub-entry). Firing
 	// them concurrently makes jiti (Pi's dev loader) hand the second caller a

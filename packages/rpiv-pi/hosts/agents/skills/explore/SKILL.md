@@ -342,13 +342,16 @@ Solutions document written to:
 
 💬 Follow-up: describe the change in chat to append a timestamped Follow-up section to this artifact. Re-run `/explore` for a fresh artifact.
 
+```
+
 **Next step (default):** `/design .rpiv/artifacts/solutions/{filename}.md` — turn the chosen option into a design artifact.
 **Alternative:** `/blueprint .rpiv/artifacts/solutions/{filename}.md` — explicitly choose the fast path on smaller tasks.
 
 **Working directory:** `{absolute working directory}`
-Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the default next step above in this conversation; keep its exact command, arguments, and working directory. The alternative requires an explicit choice.
-> After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
-```
+**Input artifact:** `{absolute path to .rpiv/artifacts/solutions/<filename>.md}`
+**Branch:** `{current symbolic branch}`
+**Kata issue:** `{qualified project#ref}`
+Reply /next to run only the default next step above in a fresh session; the alternative requires an explicit choice.
 
 ### Step 9: Handle Follow-ups
 

@@ -511,12 +511,15 @@ Ask follow-ups, or chain forward.
 
 💬 Follow-up: describe the question in chat to append a timestamped Follow-up section. Retired IDs stay retired; re-run `/rpiv:code-review` for a fresh review.
 
+```
+
 **Next step:** `/rpiv:design "Address findings from .rpiv/artifacts/reviews/{filename}.md"` — run the design phase over the review document to produce a fix plan.
 
 **Working directory:** `{absolute working directory}`
-Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the next step above in this conversation; keep its exact command, arguments, and working directory. Omit this offer if there are no actionable findings.
-> After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
-```
+**Input artifact:** `{absolute path to .rpiv/artifacts/reviews/<filename>.md}`
+**Branch:** `{current symbolic branch}`
+**Kata issue:** `{qualified project#ref}`
+Reply /next to run only the next step above in a fresh session; omit this offer if there are no actionable findings.
 
 ### Step 9: Handle Follow-ups
 

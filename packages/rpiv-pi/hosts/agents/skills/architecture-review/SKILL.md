@@ -258,13 +258,16 @@ Phases are agent-driven: each one will be handed to `blueprint` → `implement`.
 
    The artifact is blueprint-consumable per phase:
 
+   ```
+
    **Next step (default, Phase 1 only):** `/blueprint .rpiv/artifacts/architecture-reviews/{filename}.md Implement Phase 1: {phase name}` — blueprint treats the named phase as the feature scope.
    Later phases are separate invocations, not part of this approval.
 
    **Working directory:** `{absolute working directory}`
-   Reply `next` ([handoff rules](../_shared/next-handoff.md)) to run only the Phase 1 blueprint above in this conversation; include the complete phase-scoped argument in the fallback command. Later phases need new approval.
-   > After `/new`, use the full command above from this working directory; `next` does not recover a prior conversation.
-   ```
+**Input artifact:** `{absolute path to .rpiv/artifacts/architecture-reviews/<filename>.md}`
+**Branch:** `{current symbolic branch}`
+**Kata issue:** `{qualified project#ref}`
+Reply /next to run only the Phase 1 blueprint above in a fresh session; later phases need new approval.
 
 ### Step 10: Handle Follow-ups
 
