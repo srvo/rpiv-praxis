@@ -10,7 +10,7 @@ interface Owner {
 
 export class ResumeAlreadyRunningError extends Error {
 	constructor(runId: string) {
-		super(`workflow run ${runId} is already being resumed`);
+		super(`workflow run ${runId} is already executing`);
 		this.name = "ResumeAlreadyRunningError";
 	}
 }

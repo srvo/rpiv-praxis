@@ -70,15 +70,29 @@ export interface WorkflowExecutionProvider {
 // BOX, exactly like the lifecycle flush-box pattern (internal-utils.ts).
 const getProviderBox = globalSlot(Symbol.for("@juicesharp/rpiv-workflow:executionHostProvider"), () => ({
 	provider: undefined as WorkflowExecutionProvider | undefined,
+	registrations: [] as { provider: WorkflowExecutionProvider; disposed: boolean }[],
 }));
 
-export function registerWorkflowExecutionHost(p: WorkflowExecutionProvider): void {
-	getProviderBox().provider = p;
+export function registerWorkflowExecutionHost(p: WorkflowExecutionProvider): () => void {
+	const box = getProviderBox();
+	const registration = { provider: p, disposed: false };
+	if (!box.registrations) box.registrations = [];
+	box.registrations.push(registration);
+	box.provider = p;
+	return () => {
+		if (registration.disposed) return;
+		registration.disposed = true;
+		while (box.registrations.at(-1)?.disposed) box.registrations.pop();
+		box.provider = box.registrations.at(-1)?.provider;
+	};
 }
 export function getWorkflowExecutionProvider(): WorkflowExecutionProvider | undefined {
 	return getProviderBox().provider;
 }
 /** Test reset — re-exported from `internal.ts` and called in `test/setup.ts` beforeEach. */
 export function __resetWorkflowExecutionHost(): void {
-	getProviderBox().provider = undefined;
+	const box = getProviderBox();
+	box.provider = undefined;
+	if (!box.registrations) box.registrations = [];
+	box.registrations.length = 0;
 }

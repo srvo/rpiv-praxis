@@ -37,6 +37,7 @@ import {
 	type ClaimResult,
 	claimName,
 	generateRunId,
+	isValidName,
 	readAllStages,
 	releaseName,
 	STATE_SCHEMA_VERSION,
@@ -46,11 +47,13 @@ import { childSessionsDir } from "../state/paths.js";
 import type { BranchEntry } from "../transcript.js";
 import { DEFAULT_TRIGGER } from "../triggers.js";
 import type { RunContext, RunWorkflowOptions, RunWorkflowResult } from "../types.js";
+import { combineAbortSignals } from "./abort-signal.js";
 import { reconstructState } from "./resume.js";
 import { resumeRefusalError, selectResumeEntry } from "./resume-entry.js";
-import { acquireResumeLock, ResumeAlreadyRunningError } from "./resume-lock.js";
 import { buildRunContext, freshRunState, validateRunBudgets } from "./run-context.js";
+import { withRunLease } from "./run-lease.js";
 import { dispatchStageOrRecordFailure } from "./run-stage.js";
+import { workflowValidationError } from "./workflow-validation.js";
 
 // ---------------------------------------------------------------------------
 // Shared tail — executeRun
@@ -62,6 +65,7 @@ import { dispatchStageOrRecordFailure } from "./run-stage.js";
  * `runWorkflow` (new runs) and `resumeWorkflow` (resumed runs) so
  * lifecycle events, result assembly, and error propagation stay in lockstep.
  */
+
 async function executeRun(
 	ctx: WorkflowHostContext,
 	run: RunContext,
@@ -182,7 +186,7 @@ async function detachExecutor(
 		dispose: exec.dispose,
 		resolveModel: options.resolveModel ?? provider.resolveModel,
 		readSessionBranch: options.readSessionBranch ?? provider.readSessionBranch,
-		signal: options.signal ?? exec.signal, // provider-owned abort handle
+		signal: combineAbortSignals(options.signal, exec.signal), // provider-owned abort handle
 	};
 }
 
@@ -209,6 +213,8 @@ function nameClaimError(name: string, claim: Extract<ClaimResult, { ok: false }>
  */
 export async function runWorkflow(ctx: WorkflowHostContext, options: RunWorkflowOptions): Promise<RunWorkflowResult> {
 	const { workflow } = options;
+	const validationError = workflowValidationError(workflow);
+	if (validationError) return { stagesCompleted: 0, success: false, error: validationError };
 	if (!workflow.stages[workflow.start]) {
 		return {
 			stagesCompleted: 0,
@@ -223,8 +229,21 @@ export async function runWorkflow(ctx: WorkflowHostContext, options: RunWorkflow
 	const budgetError = validateRunBudgets(options);
 	if (budgetError !== undefined) return { stagesCompleted: 0, success: false, error: budgetError };
 
+	if (options.name && !isValidName(options.name))
+		return { stagesCompleted: 0, success: false, error: MSG_NAME_INVALID(options.name) };
+
 	const cwd = ctx.cwd;
 	const runId = generateRunId();
+	return withRunLease(cwd, runId, () => runWorkflowWithLease(ctx, options, runId));
+}
+
+async function runWorkflowWithLease(
+	ctx: WorkflowHostContext,
+	options: RunWorkflowOptions,
+	runId: string,
+): Promise<RunWorkflowResult> {
+	const { workflow } = options;
+	const cwd = ctx.cwd;
 	const trigger = options.trigger ?? DEFAULT_TRIGGER;
 
 	// Reserve the name (validate → collision → persist) through the state
@@ -330,19 +349,10 @@ export async function resumeWorkflow(
 	ctx: WorkflowHostContext,
 	options: ResumeWorkflowOptions,
 ): Promise<RunWorkflowResult> {
-	let release: (() => void) | undefined;
-	try {
-		release = acquireResumeLock(ctx.cwd, options.header.runId);
-	} catch (error) {
-		if (error instanceof ResumeAlreadyRunningError)
-			return { stagesCompleted: 0, success: false, runId: options.header.runId, error: error.message };
-		throw error;
-	}
-	try {
-		return await resumeWorkflowWithLease(ctx, options);
-	} finally {
-		release();
-	}
+	const validationError = workflowValidationError(options.workflow);
+	if (validationError)
+		return { stagesCompleted: 0, success: false, runId: options.header.runId, error: validationError };
+	return withRunLease(ctx.cwd, options.header.runId, () => resumeWorkflowWithLease(ctx, options));
 }
 
 async function resumeWorkflowWithLease(

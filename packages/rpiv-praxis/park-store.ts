@@ -104,10 +104,12 @@ export function openParks(cwd: string): Park[] {
 		.filter((p) => p.status !== "resumed")
 		.sort((a, b) => a.askedAt.localeCompare(b.askedAt));
 }
-
-/** The answered park for this run whose stage prompt matches, if the resumed run is re-dispatching it. */
-export function answeredParkFor(cwd: string, runId: string, prompt: string): Park | undefined {
-	return readParks(cwd, runId).find((p) => p.status === "answered" && p.prompt === prompt);
+/** The oldest answered park for this run and stable stage identity. Prompt text is not an identity. */
+export function answeredParkFor(cwd: string, runId: string, stage: string): Park | undefined {
+	const next = readParks(cwd, runId)
+		.filter((park) => park.stage === stage && park.status !== "resumed")
+		.sort((a, b) => a.n - b.n)[0];
+	return next?.status === "answered" ? next : undefined;
 }
 
 /** A run reference (name or id) → its run id, via the runner's `names.json`. */

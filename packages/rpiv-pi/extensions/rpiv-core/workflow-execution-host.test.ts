@@ -19,22 +19,32 @@ import { createLaneRelayUiContext } from "./lane-relay-ui.ts";
 import { SINGLE_UNIT_KEY } from "./run-lane-registry.ts";
 import { registerWorkflowExecutionHostProviderHook } from "./workflow-execution-host.ts";
 
-type SessionStartHandler = (ev: unknown, ctx: unknown) => unknown | Promise<unknown>;
+type SessionLifecycleHandler = (ev: unknown, ctx: unknown) => unknown | Promise<unknown>;
 
-function makePi(): { pi: ExtensionAPI; sessionStart: () => SessionStartHandler | undefined } {
-	let handler: SessionStartHandler | undefined;
+function makePi(): {
+	pi: ExtensionAPI;
+	sessionStart: () => SessionLifecycleHandler | undefined;
+	sessionShutdown: () => SessionLifecycleHandler | undefined;
+} {
+	let startHandler: SessionLifecycleHandler | undefined;
+	let shutdownHandler: SessionLifecycleHandler | undefined;
 	const pi = {
-		on: vi.fn((event: string, h: SessionStartHandler) => {
-			if (event === "session_start") handler = h;
+		on: vi.fn((event: string, handler: SessionLifecycleHandler) => {
+			if (event === "session_start") startHandler = handler;
+			if (event === "session_shutdown") shutdownHandler = handler;
 		}),
 	} as unknown as ExtensionAPI;
-	return { pi, sessionStart: () => handler };
+	return {
+		pi,
+		sessionStart: () => startHandler,
+		sessionShutdown: () => shutdownHandler,
+	};
 }
 
 const REAL_UI = { notify: vi.fn(), setStatus: vi.fn() } as unknown as ExtensionUIContext;
 
 beforeEach(() => {
-	registerWorkflowExecutionHost.mockClear();
+	registerWorkflowExecutionHost.mockReset();
 });
 afterEach(() => {
 	vi.restoreAllMocks();
@@ -46,6 +56,32 @@ describe("registerWorkflowExecutionHostProviderHook", () => {
 		registerWorkflowExecutionHostProviderHook(pi);
 		await sessionStart()!({}, { hasUI: true, ui: REAL_UI });
 		expect(registerWorkflowExecutionHost).toHaveBeenCalledTimes(1);
+	});
+	it("disposes the previous provider on re-registration and the final provider on session shutdown", async () => {
+		const { pi, sessionStart, sessionShutdown } = makePi();
+		const disposeFirst = vi.fn();
+		const disposeSecond = vi.fn();
+		registerWorkflowExecutionHost.mockReturnValueOnce(disposeFirst).mockReturnValueOnce(disposeSecond);
+		registerWorkflowExecutionHostProviderHook(pi);
+		await sessionStart()!({}, { hasUI: true, ui: REAL_UI });
+		await sessionStart()!({}, { hasUI: true, ui: REAL_UI });
+		expect(disposeFirst).toHaveBeenCalledOnce();
+		expect(disposeSecond).not.toHaveBeenCalled();
+		await sessionShutdown()!({}, { hasUI: true, ui: REAL_UI });
+		expect(disposeSecond).toHaveBeenCalledOnce();
+	});
+
+	it("disposes a provider whose async registration finishes after shutdown", async () => {
+		const { pi, sessionStart, sessionShutdown } = makePi();
+		const dispose = vi.fn();
+		registerWorkflowExecutionHost.mockReturnValueOnce(dispose);
+		registerWorkflowExecutionHostProviderHook(pi);
+
+		const start = sessionStart()!({}, { hasUI: true, ui: REAL_UI });
+		await sessionShutdown()!({}, { hasUI: true, ui: REAL_UI });
+		await start;
+
+		expect(dispose).toHaveBeenCalledOnce();
 	});
 
 	it("does NOT register for a detached foreground child (branded relay ui)", async () => {

@@ -102,7 +102,6 @@ export function createWorkflowExecution(
 
 	// Record this run as a switchable lane at launch (appears in the ambient
 	// overlay while in-flight). Done unconditionally (headless too) so eviction is symmetric.
-	recordRun(runId, name ?? runId, { workflow, input });
 
 	// Abort tap — FOCUS-GATED (the float fix). Pre-float, /wf awaited and the run
 	// WAS the foreground, so a global ESC/Ctrl-C abort was correct. Once the run
@@ -124,6 +123,7 @@ export function createWorkflowExecution(
 				return undefined; // pass through (editor / focused overlay / sibling taps)
 			})
 		: undefined;
+	recordRun(runId, name ?? runId, { workflow, input });
 	// Expose this run's abort so the manager can cancel it WITHOUT the user
 	// switching in (the Ctrl-C tap above is focus-gated). Headless runs have no tap, so
 	// only wire it with a UI.
@@ -135,8 +135,13 @@ export function createWorkflowExecution(
 	// (a still-"running" lane at dispose means no terminal event fired → retire as aborted),
 	// so a lane can never be stranded "running" forever.
 	const dispose = () => {
-		off?.();
-		if (getLane(runId)?.status === "running") retireRun(runId, "aborted");
+		try {
+			off?.();
+		} catch (error) {
+			console.error("[rpiv-core] failed to remove workflow terminal-input listener:", error);
+		} finally {
+			if (getLane(runId)?.status === "running") retireRun(runId, "aborted");
+		}
 	};
 	return { host, signal: observer.hasUI ? ac.signal : undefined, dispose };
 }
@@ -158,11 +163,29 @@ export function createWorkflowExecution(
  * across `/reload` — last-writer-wins, but only the root ever writes.
  */
 export function registerWorkflowExecutionHostProviderHook(pi: ExtensionAPI): void {
+	let unregister: (() => void) | undefined;
+	let generation = 0;
 	pi.on("session_start", async (_event: unknown, ctx: { hasUI?: boolean; ui?: ExtensionUIContext }) => {
 		if (!ctx.hasUI || isLaneRelayUiContext(ctx.ui)) return; // root launcher only
-		await registerWorkflowExecutionHostProvider().catch((err) =>
-			console.error("[rpiv-core] failed to register workflow execution host:", err),
-		);
+		const current = ++generation;
+		unregister?.();
+		unregister = undefined;
+		const dispose = await registerWorkflowExecutionHostProvider().catch((err) => {
+			console.error("[rpiv-core] failed to register workflow execution host:", err);
+			return undefined;
+		});
+		// session_start handlers can overlap during dynamic import; only the newest
+		// live root session may own the registration. Shutdown invalidates pending work.
+		if (current !== generation) {
+			dispose?.();
+			return;
+		}
+		unregister = dispose;
+	});
+	pi.on("session_shutdown", () => {
+		generation++;
+		unregister?.();
+		unregister = undefined;
 	});
 }
 
@@ -171,11 +194,11 @@ export function registerWorkflowExecutionHostProviderHook(pi: ExtensionAPI): voi
  * seam. Invoked from the root-gated session_start hook above; degrades silently
  * when the sibling is absent (the missing-sibling banner + /rpiv-setup guide the user).
  */
-export async function registerWorkflowExecutionHostProvider(): Promise<void> {
+export async function registerWorkflowExecutionHostProvider(): Promise<(() => void) | undefined> {
 	try {
 		// Thin `/startup` entry — keeps the loader/DSL/runner graph off startup.
 		const { registerWorkflowExecutionHost } = await import("@juicesharp/rpiv-workflow/startup");
-		registerWorkflowExecutionHost({
+		const unregister: unknown = registerWorkflowExecutionHost({
 			createHost: createWorkflowExecution,
 			resolveModel: ({ workflow, stage, skill }) =>
 				toModelSelection(resolveStageModel(loadModelsConfig(), { workflow, stage, skill })),
@@ -195,6 +218,7 @@ export async function registerWorkflowExecutionHostProvider(): Promise<void> {
 				}
 			},
 		});
+		return typeof unregister === "function" ? (unregister as () => void) : undefined;
 	} catch (err) {
 		if (isModuleNotFound(err)) return; // sibling absent — /rpiv-setup guides the user
 		throw err;

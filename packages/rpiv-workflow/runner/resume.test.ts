@@ -1706,6 +1706,36 @@ describe("resumeWorkflow", () => {
 		writeFileSync(join(tmpDir, relPath), content);
 	}
 
+	it("validates the exact workflow passed to resumeWorkflow before reconstruction or dispatch", async () => {
+		writeRun(resumeHeader, [
+			{
+				session: null,
+				stageNumber: 1,
+				stage: "plan",
+				skill: "plan",
+				status: "failed",
+				ts: "2026-06-03T07:31:00Z",
+				errMsg: "retry me",
+			},
+		]);
+		const invalid: Workflow = {
+			...twoStageWf,
+			stages: { ...twoStageWf.stages, plan: { ...twoStageWf.stages.plan, sessionPolicy: "invalid" as never } },
+		};
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+
+		const result = await resumeWorkflow(chain.ctx, {
+			workflow: invalid,
+			header: resumeHeader,
+			ref: `@${resumeHeader.runId}`,
+		});
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/sessionPolicy/i);
+		expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
+		expect(readRunStages(resumeHeader.runId)).toHaveLength(1);
+	});
+
 	it("failed-trailer: re-runs the failed stage and continues to completion", async () => {
 		// Stage 1 completed, stage 2 failed.
 		// Resume should re-run stage 2 and complete.
@@ -2165,7 +2195,7 @@ describe("resumeWorkflow", () => {
 		const completed = await owner;
 
 		expect(duplicate.success).toBe(false);
-		expect(duplicate.error).toMatch(/already being resumed/);
+		expect(duplicate.error).toMatch(/already executing/);
 		expect(completed.success).toBe(true);
 		expect(executions).toBe(2);
 		expect(readAllStages(tmpDir, header.runId).map((row) => row.stageNumber)).toEqual([1, 2]);
@@ -2612,7 +2642,7 @@ describe("resumeWorkflow — gate-stop halts (the re-measure)", () => {
 			name: "test-wf",
 			start: "plan",
 			stages: {
-				plan: { kind: "produces", sessionPolicy: "fresh" },
+				plan: { kind: "produces", sessionPolicy: "fresh", outcome: artifactOutcome },
 				check: produces.script({
 					run: ({ cwd }) => ({
 						kind: "artifacts",

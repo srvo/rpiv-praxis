@@ -211,7 +211,7 @@ describe("runWorkflow", () => {
 	/** Read the single JSONL state file produced for a run, as parsed objects. */
 	const readState = (cwd: string): { header: Record<string, unknown>; stages: Array<Record<string, unknown>> } => {
 		const dir = join(cwd, ".rpiv", "workflows", "runs");
-		const files = readdirSync(dir);
+		const files = readdirSync(dir).filter((file) => file.endsWith(".jsonl"));
 		expect(files).toHaveLength(1);
 		const lines = readFileSync(join(dir, files[0]!), "utf-8").trim().split("\n");
 		return {
@@ -243,6 +243,17 @@ describe("runWorkflow", () => {
 		expect(result.success).toBe(false);
 		expect(result.stagesCompleted).toBe(0);
 		expect(result.error).toMatch(/start stage "ghost" is not declared/);
+		expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
+		expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
+	});
+	it("validates the exact workflow passed to runWorkflow before creating a run or dispatching", async () => {
+		const chain = createMockSessionChain({ cwd: tmpDir, steps: [] });
+		const invalid = wf("invalid-target", ["a"], {}, { a: "ghost" as never });
+
+		const result = await runWorkflow(chain.ctx, { workflow: invalid, input: "x" });
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/not declared in stages/);
 		expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
 		expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
 	});
@@ -1024,14 +1035,9 @@ describe("runWorkflow", () => {
 			});
 
 			expect(result.success).toBe(false);
-			expect(result.error).toMatch(/cannot combine loop with sessionPolicy.*continue/);
-
-			// JSONL now carries a row attributed to the failing stage —
-			// no orphan header-only file.
-			const { stages } = readState(tmpDir);
-			const failedRows = stages.filter((s) => s.status === "failed");
-			expect(failedRows).toHaveLength(1);
-			expect(failedRows[0]?.skill).toBe("implement");
+			expect(result.error).toMatch(/cannot combine a loop with sessionPolicy/);
+			expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
+			expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
 		});
 
 		// -------------------------------------------------------------------
@@ -1066,18 +1072,9 @@ describe("runWorkflow", () => {
 			});
 
 			expect(result.success).toBe(false);
-			expect(result.error).toMatch(/cannot combine loop with sessionPolicy.*continue/);
-
-			const { stages } = readState(tmpDir);
-			const completedRows = stages.filter((s) => s.status === "completed");
-			const failedRows = stages.filter((s) => s.status === "failed");
-
-			// Stage 1 completed and was recorded once. Stage 2 failed and was
-			// recorded once, keyed by ITS OWN skill name — not by "research".
-			expect(completedRows).toHaveLength(1);
-			expect(completedRows[0]?.skill).toBe("research");
-			expect(failedRows).toHaveLength(1);
-			expect(failedRows[0]?.skill).toBe("implement");
+			expect(result.error).toMatch(/cannot combine a loop with sessionPolicy/);
+			expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
+			expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
 		});
 
 		it("a detached continue child sees no prior-stage artifact (no false positive)", async () => {
@@ -3917,29 +3914,27 @@ describe("totalStages denominator (countReachableNodes)", () => {
 		expect(cap.get()).toBe(2);
 	});
 
-	it("throws when an EdgeFn has no .targets — validation should have rejected the workflow", async () => {
+	it("refuses an EdgeFn without .targets before creating a run", async () => {
 		const chain = createMockSessionChain({
 			cwd: tmpDir,
 			steps: [{ branch: [mockAssistantMessage("done")] }],
 		});
-		// A bare EdgeFn skips defineRoute/gate and carries no .targets
-		// metadata. validateWorkflow rejects this at load time; if a test bypasses
-		// validation and feeds it to runWorkflow, the runner surfaces the broken
-		// invariant loudly instead of silently miscounting the denominator.
 		const bareEdge = () => "b";
-		await expect(
-			runWorkflow(chain.ctx, {
-				workflow: {
-					name: "naked",
-					start: "a",
-					stages: {
-						a: { kind: "side-effect", sessionPolicy: "fresh" },
-						b: { kind: "side-effect", sessionPolicy: "fresh" },
-					},
-					edges: { a: bareEdge, b: "stop" },
+		const result = await runWorkflow(chain.ctx, {
+			workflow: {
+				name: "naked",
+				start: "a",
+				stages: {
+					a: { kind: "side-effect", sessionPolicy: "fresh" },
+					b: { kind: "side-effect", sessionPolicy: "fresh" },
 				},
-				input: "x",
-			}),
-		).rejects.toThrow(/countReachableStages: edge from "a" is an EdgeFn without \.targets/);
+				edges: { a: bareEdge, b: "stop" },
+			},
+			input: "x",
+		});
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/EdgeFn without `.targets` metadata/);
+		expect(chain.ctx.spawnChild).not.toHaveBeenCalled();
+		expect(existsSync(join(tmpDir, ".rpiv", "workflows", "runs"))).toBe(false);
 	});
 });

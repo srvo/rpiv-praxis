@@ -1,12 +1,16 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { runsDir } from "../state/paths.js";
 import { acquireResumeLock, ResumeAlreadyRunningError } from "./resume-lock.js";
 
 let cwd: string;
-afterEach(() => rmSync(cwd, { recursive: true, force: true }));
+afterEach(() => {
+	if (!process.env.RPIV_RESUME_LOCK_PROBE_CWD) rmSync(cwd, { recursive: true, force: true });
+});
 
 const setup = () => {
 	cwd = mkdtempSync(join(tmpdir(), "rpiv-resume-lock-"));
@@ -33,6 +37,40 @@ describe("per-run resume lock", () => {
 		const release = acquireResumeLock(cwd, "run-2");
 		expect(JSON.parse(readFileSync(ownerFile, "utf8"))).toMatchObject({ pid: process.pid });
 		release();
+	});
+	it("refuses a lease held by a separate operating-system process", () => {
+		const probeCwd = process.env.RPIV_RESUME_LOCK_PROBE_CWD;
+		if (probeCwd) {
+			cwd = probeCwd;
+			expect(() => acquireResumeLock(cwd, "process-run")).toThrow(ResumeAlreadyRunningError);
+			return;
+		}
+		setup();
+		const release = acquireResumeLock(cwd, "process-run");
+		try {
+			const projectRoot = process.cwd();
+			const result = spawnSync(
+				process.execPath,
+				[
+					resolve(projectRoot, "node_modules/vitest/vitest.mjs"),
+					"run",
+					fileURLToPath(import.meta.url),
+					"-t",
+					"refuses a lease held by a separate operating-system process",
+					"--maxWorkers=1",
+				],
+				{
+					cwd: projectRoot,
+					encoding: "utf8",
+					timeout: 30_000,
+					env: { ...process.env, RPIV_RESUME_LOCK_PROBE_CWD: cwd },
+				},
+			);
+			expect(result.error, `${result.stderr}\n${result.stdout}`).toBeUndefined();
+			expect(result.status, `${result.stderr}\n${result.stdout}`).toBe(0);
+		} finally {
+			release();
+		}
 	});
 	it("keeps an aged live owner locked", () => {
 		setup();

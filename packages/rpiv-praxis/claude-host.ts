@@ -143,7 +143,7 @@ export interface Parking {
 		/** The assistant text of the asking turn: what the question refers to. */
 		context?: string;
 	}): void;
-	answerFor(prompt: string):
+	answerFor(stage: string | undefined):
 		| {
 				sessionId: string;
 				sessionFile?: string;
@@ -338,7 +338,7 @@ export class ClaudeWorkflowHost implements WorkflowHostContext {
 				// id, never assumed to be the source's (that would point resume at the predecessor).
 				await child.adopt(sessionId, options.fork.sessionFile, this.locate(sessionId));
 			} else {
-				const answered = this.opts.parking?.answerFor(options.prompt);
+				const answered = this.opts.parking?.answerFor(options.stage);
 				if (answered) {
 					if (answered.usage) this.usageSeen.set(answered.sessionId, answered.usage);
 					const file = answered.sessionFile ?? this.locate(answered.sessionId);

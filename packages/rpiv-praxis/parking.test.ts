@@ -83,15 +83,21 @@ describe("createRunParking", () => {
 	it("hands an answered park back once, then marks it delivered", () => {
 		const cwd = project();
 		const rp = createRunParking({ cwd, runId: "r1", stop: () => {}, notify: () => {} });
-		rp.parking.park({ prompt: "/skill:pick", sessionId: "s1", sessionFile: "/f.jsonl", questions: [ask] });
-		expect(rp.parking.answerFor("/skill:pick")).toBeUndefined();
+		rp.parking.park({
+			prompt: "/skill:pick",
+			stage: "pick",
+			sessionId: "s1",
+			sessionFile: "/f.jsonl",
+			questions: [ask],
+		});
+		expect(rp.parking.answerFor("pick")).toBeUndefined();
 		updatePark(cwd, "r1", 1, { status: "answered", answer: "Blue" });
-		const got = rp.parking.answerFor("/skill:pick")!;
+		const got = rp.parking.answerFor("pick")!;
 		expect(got).toMatchObject({ sessionId: "s1", sessionFile: "/f.jsonl" });
 		expect(got.message).toContain("Answer: Blue");
 		got.delivered();
 		expect(readParks(cwd, "r1")[0]!.status).toBe("resumed");
-		expect(rp.parking.answerFor("/skill:pick")).toBeUndefined();
+		expect(rp.parking.answerFor("pick")).toBeUndefined();
 		expect(createRunParking({ cwd, stop: () => {}, notify: () => {} }).parking.answerFor("x")).toBeUndefined();
 	});
 });
@@ -100,12 +106,12 @@ describe("usage baseline", () => {
 	it("saves a parked session's cumulative usage and hands it back with the answer", () => {
 		const cwd = project();
 		const rp = createRunParking({ cwd, runId: "r1", stop: () => {}, notify: () => {} });
-		rp.parking.park({ prompt: "/skill:pick", sessionId: "s1", questions: [ask] });
+		rp.parking.park({ prompt: "/skill:pick", stage: "pick", sessionId: "s1", questions: [ask] });
 		rp.parking.noteUsage!("other-session", { costUsd: 9, models: {} });
 		rp.parking.noteUsage!("s1", { costUsd: 0.06, models: {} });
 		expect(readParks(cwd, "r1")[0]!.usage).toEqual({ costUsd: 0.06, models: {} });
 		updatePark(cwd, "r1", 1, { status: "answered", answer: "Blue" });
-		expect(rp.parking.answerFor("/skill:pick")!.usage).toEqual({ costUsd: 0.06, models: {} });
+		expect(rp.parking.answerFor("pick")!.usage).toEqual({ costUsd: 0.06, models: {} });
 	});
 });
 
