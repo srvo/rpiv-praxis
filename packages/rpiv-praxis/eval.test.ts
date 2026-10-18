@@ -387,6 +387,29 @@ describe("long unattended evals", () => {
 		expect(second.calls.filter((c) => c.cmd !== "sh")).toHaveLength(0);
 		expect(readFileSync(join(dir, "summary.md"), "utf8")).toContain("spent $1.0000");
 	});
+	it("preserves a valid final result without LF during continuation", async () => {
+		const { root, specFile } = fixture();
+		const first: string[] = [];
+		await runEval(specFile, { outDir: join(root, "res"), out: (l) => first.push(l), deps: fakeDeps().deps });
+		const dir = first
+			.at(-1)!
+			.replace("summary: ", "")
+			.replace(/summary\.md$/, "");
+		const resultsPath = join(dir, "results.jsonl");
+		const lines = readFileSync(resultsPath, "utf8").trim().split("\n");
+		writeFileSync(resultsPath, `${lines[0]}\n${lines[1]}`);
+
+		const { deps, calls } = fakeDeps();
+		const out: string[] = [];
+		expect(await runEval(undefined, { continueDir: dir, out: (l) => out.push(l), deps })).toBe(0);
+		expect(out[0]).toContain("2 already recorded, 2 to run");
+		expect(calls.filter((c) => c.cmd !== "sh")).toHaveLength(2);
+		expect(readFileSync(resultsPath, "utf8").trim().split("\n")).toHaveLength(4);
+
+		const resumedAgain = fakeDeps();
+		expect(await runEval(undefined, { continueDir: dir, out: () => {}, deps: resumedAgain.deps })).toBe(0);
+		expect(resumedAgain.calls.filter((c) => c.cmd !== "sh")).toHaveLength(0);
+	});
 	it.skipIf(process.platform === "win32")(
 		"hard-kills timed-out descendants and closes their output pipes",
 		async () => {

@@ -35,6 +35,9 @@ function processIsAlive(pid: number): boolean {
 
 /** One atomic owner directory per run. Reclaim is separately serialized across stale-lock contenders. */
 export function acquireResumeLock(cwd: string, runId: string): () => void {
+	if (!runId || /[\\/\0]/.test(runId) || runId === "." || runId === "..") {
+		throw new Error(`invalid workflow run ID for resume lock: ${JSON.stringify(runId)}`);
+	}
 	const root = join(runsDir(cwd), `${runId}.resume-lock`);
 	const ownerFile = join(root, "owner.json");
 	const ownerTemp = join(root, `.owner-${process.pid}-${randomUUID()}.tmp`);
