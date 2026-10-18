@@ -24,21 +24,30 @@
  * A stopped run is resumable like an interrupted one.
  */
 
-import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { RunWorkflowResult, WorkflowHostContext } from "@juicesharp/rpiv-workflow";
 import { type ClaudeHostDeps, ClaudeWorkflowHost } from "./claude-host.js";
+import { type CliIo, EXIT, reportInvocation } from "./cli-outcome.js";
 import { detectKata, type Kata, type KataOptions } from "./kata.js";
 import { formatPark, openParks, readParks, resolveChoice, resolveRunId, updatePark } from "./park-store.js";
 import { createRunParking } from "./parking.js";
+import { formatProgressMarkdown, type ProgressReport, reportProgress } from "./progress.js";
 import { registerRpivWorkflowSupport } from "./rpiv-support.js";
+import {
+	generateRunAlias,
+	hasRunAliasEntry,
+	listRunAliases,
+	registerRunAlias,
+	reserveRunAlias,
+	resolveRunAlias,
+} from "./run-alias.js";
 import { mergeLifecycles, RunLedger } from "./run-ledger.js";
 import { defaultPluginDir, loadSkillCatalog, skillRegistryHost } from "./skills.js";
 import { registerStep, STEP_PREFIX, stepSkill, stepSkills, stepWorkflowName } from "./steps.js";
 import { addTurn, emptyTotals, listFlag } from "./usage.js";
 
-export const EXIT = { ok: 0, failed: 1, usage: 2, parked: 75, budget: 76, timeout: 124, interrupted: 130 } as const;
+export { type CliIo, EXIT } from "./cli-outcome.js";
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 type Effort = (typeof EFFORTS)[number];
@@ -57,10 +66,12 @@ const USAGE = `usage:
   rpiv-wf eval <spec.json> [--dry-run] [--out <dir>]
   rpiv-wf eval --continue <eval-results dir>   finish an interrupted eval
   rpiv-wf inbox
+  rpiv-wf runs                         named runs shared by this repo's worktrees
+  rpiv-wf progress [--json]            all authoring topics across linked worktrees + Kata
   rpiv-wf answer <run-id|name> <n> <choice...> [--no-resume] [options]
 
 options:
-  --name <name>              name the run (resume it later by name)
+  --name <name>              override the auto RPIV run alias; resume by name across worktrees
   --model <id>               Claude model for every stage (default: Claude Code's)
   --concurrency <n>          parallel fan-out units (default 4)
   --permission-mode <mode>   ${PERMISSION_MODES.join(" | ")} (default auto)
@@ -88,11 +99,6 @@ a cost/token cap, 124 stopped at --timeout, 130 interrupted. Stopped runs resume
 Usage (tokens always, cost when the SDK reports one) is written to the run's
 JSONL as one row per stage turn, so caps count what earlier invocations spent.`;
 
-export interface CliIo {
-	out: (line: string) => void;
-	err: (line: string) => void;
-}
-
 /** The workflow API, injectable so tests drive the CLI without the runner. */
 export interface WorkflowApi {
 	loadWorkflows(cwd: string): Promise<{
@@ -108,16 +114,6 @@ async function defaultApi(cwd: string): Promise<WorkflowApi> {
 	const { loadWorkflows } = await import("@juicesharp/rpiv-workflow/registration");
 	const { runWorkflowByName, resumeWorkflowByRunId } = await import("@juicesharp/rpiv-workflow/runner");
 	return { loadWorkflows, runWorkflowByName, resumeWorkflowByRunId } as WorkflowApi;
-}
-
-/** Write this invocation's outcome and usage as JSON, when a metrics file was asked for. */
-function writeMetrics(file: string | undefined, metrics: object): void {
-	if (!file) return;
-	try {
-		writeFileSync(file, `${JSON.stringify(metrics, null, "\t")}\n`);
-	} catch (err) {
-		process.stderr.write(`[warning] could not write metrics to ${file}: ${String(err)}\n`);
-	}
 }
 
 /** The skill behind a step run, read from the run's header; undefined for any other run. */
@@ -173,17 +169,6 @@ const onProcessExit = (fn: (code: number) => void): (() => void) => {
 	return () => process.off("exit", fn);
 };
 
-function report(result: RunWorkflowResult, io: CliIo): number {
-	const where = result.runId ? ` (run ${result.runId})` : "";
-	if (result.success) {
-		io.out(`completed${where}: ${result.stagesCompleted} stage(s)`);
-		if (result.lastArtifact) io.out(`artifact: ${result.lastArtifact}`);
-		return EXIT.ok;
-	}
-	io.err(`failed${where} after ${result.stagesCompleted} stage(s): ${result.error ?? "unknown error"}`);
-	return EXIT.failed;
-}
-
 export async function main(
 	argv: readonly string[],
 	io: CliIo = { out: (l) => process.stdout.write(`${l}\n`), err: (l) => process.stderr.write(`${l}\n`) },
@@ -195,6 +180,7 @@ export async function main(
 		/** Builds the kata client when `kata` is not injected (tests). */
 		detectKata?: typeof detectKata;
 		metricsFile?: string;
+		progressReport?: (cwd: string) => ProgressReport;
 		/** Registers the process `exit` listener that writes a terminal row for a run that never returns (tests). */
 		onExit?: (fn: (code: number) => void) => () => void;
 	} = {},
@@ -228,6 +214,7 @@ export async function main(
 				"stage-max-tokens": { type: "string" },
 				continue: { type: "string" },
 				"dry-run": { type: "boolean" },
+				json: { type: "boolean" },
 				kata: { type: "string" },
 				"auto-accept-checkpoints": { type: "boolean" },
 				"park-confirmations": { type: "boolean" },
@@ -258,6 +245,7 @@ export async function main(
 		"stage-max-tokens"?: string;
 		continue?: string;
 		"dry-run"?: boolean;
+		json?: boolean;
 		help?: boolean;
 	};
 	const [command, target, ...rest] = parsed.positionals;
@@ -265,7 +253,7 @@ export async function main(
 		io.out(USAGE);
 		return EXIT.ok;
 	}
-	const cwd = resolve(values.cwd ?? process.cwd());
+	let cwd = resolve(values.cwd ?? process.cwd());
 	const concurrency = Number(values.concurrency ?? 4);
 	const mode = (values["permission-mode"] ?? "auto") as PermissionMode;
 	if (!Number.isInteger(concurrency) || concurrency < 1) {
@@ -316,7 +304,7 @@ export async function main(
 	}
 
 	const needsTarget = command === "run" || command === "resume" || command === "step";
-	const known = needsTarget || ["list", "inbox", "answer", "steps"].includes(command ?? "");
+	const known = needsTarget || ["list", "runs", "progress", "inbox", "answer", "steps"].includes(command ?? "");
 	if (!known || (needsTarget && !target) || (command === "answer" && rest.length < 2)) {
 		io.err(USAGE);
 		return EXIT.usage;
@@ -327,6 +315,17 @@ export async function main(
 		return EXIT.ok;
 	}
 
+	if (command === "runs") {
+		const aliases = listRunAliases(cwd);
+		if (aliases.length === 0) io.out("no shared RPIV runs");
+		for (const alias of aliases) io.out(`${alias.name}\t${alias.workflow}\t${alias.runId}\t${alias.cwd}`);
+		return EXIT.ok;
+	}
+	if (command === "progress") {
+		const report = (inject.progressReport ?? reportProgress)(cwd);
+		io.out(values.json ? JSON.stringify(report, null, 2) : formatProgressMarkdown(report));
+		return report.kata.available ? EXIT.ok : EXIT.failed;
+	}
 	if (command === "inbox") {
 		const open = openParks(cwd);
 		if (open.length === 0) io.out("nothing waiting");
@@ -344,8 +343,24 @@ export async function main(
 			? (inject.detectKata ?? detectKata)(warn, undefined, undefined, kataOpts)
 			: (inject.kata ?? undefined);
 	let resumeRef = target;
+	let locatedRunId = command === "resume" || command === "answer" ? resolveRunId(cwd, target!) : undefined;
+	if (!locatedRunId && (command === "resume" || command === "answer")) {
+		const alias = resolveRunAlias(cwd, target!);
+		if (alias) {
+			cwd = alias.cwd;
+			locatedRunId = alias.runId;
+			resumeRef = alias.runId;
+			io.err(`[info] found RPIV run ${alias.name} in originating worktree ${alias.cwd}`);
+		}
+		if (!alias && hasRunAliasEntry(cwd, target!)) {
+			io.err(
+				`RPIV run alias "${target}" is stale or unreadable; its original worktree/run may have been removed. Run \`rpiv-wf runs\` for available runs.`,
+			);
+			return EXIT.usage;
+		}
+	}
 	if (command === "answer") {
-		const runId = resolveRunId(cwd, target!);
+		const runId = locatedRunId ?? resolveRunId(cwd, target!);
 		const n = Number(rest[0]);
 		const park = runId ? readParks(cwd, runId).find((p) => p.n === n) : undefined;
 		if (!runId || !park) {
@@ -379,6 +394,20 @@ export async function main(
 	const step = command === "step" ? target : command !== "run" ? await stepOfRun(cwd, resumeRef!) : undefined;
 	if (step && !(await registerStep(step, cwd))) {
 		io.err(`no skill "${step}" — see \`rpiv-wf steps\``);
+		return EXIT.usage;
+	}
+	const workflowName = command === "step" ? stepWorkflowName(target!) : target!;
+	const runAlias =
+		command === "run" || command === "step"
+			? (values.name ?? generateRunAlias(workflowName, rest.join(" ")))
+			: undefined;
+	if (runAlias && hasRunAliasEntry(cwd, runAlias)) {
+		const existing = resolveRunAlias(cwd, runAlias);
+		io.err(
+			existing
+				? `RPIV run alias "${runAlias}" already belongs to ${existing.runId} in ${existing.cwd}; resume that run or choose another --name`
+				: `RPIV run alias "${runAlias}" is stale or unreadable; choose a new --name or explicitly repair it after checking its originating worktree/run.`,
+		);
 		return EXIT.usage;
 	}
 
@@ -474,67 +503,53 @@ export async function main(
 		},
 		inject.deps ?? (await defaultDeps()),
 	);
+	let sharedAliasRunId: string | undefined;
 	const opts = {
 		host: skillRegistryHost(catalog),
 		signal: stop.signal,
-		lifecycle: mergeLifecycles(ledger.lifecycle, runParking.lifecycle),
+		lifecycle: mergeLifecycles(ledger.lifecycle, runParking.lifecycle, {
+			onWorkflowStart: (ctx) => {
+				if (runAlias) {
+					if (registerRunAlias(cwd, runAlias, ctx.runId, workflowName)) sharedAliasRunId = ctx.runId;
+					else warn(`could not share run alias "${runAlias}"; its run files remain available only under ${cwd}`);
+				}
+			},
+		}),
 		trigger: { kind: "programmatic", source: "rpiv-praxis" },
-		...(values.name ? { name: values.name } : {}),
+		...(runAlias ? { name: runAlias } : {}),
 		// --model is every stage's default; a pack's per-stage pin overrides it, and
 		// its escalation ladder climbs from it (the engine must see it to do either).
 		...(values.model ? { resolveModel: () => ({ model: values.model as string }) } : {}),
 	};
-	let result: RunWorkflowResult;
+	let releaseAlias: (() => void) | undefined;
 	try {
-		result =
+		try {
+			if (runAlias) releaseAlias = reserveRunAlias(cwd, runAlias);
+		} catch (error) {
+			io.err(error instanceof Error ? error.message : String(error));
+			return EXIT.usage;
+		}
+		const result =
 			command === "run" || command === "step"
-				? await api.runWorkflowByName(
-						host,
-						command === "step" ? stepWorkflowName(target!) : target!,
-						rest.join(" "),
-						opts,
-					)
+				? await api.runWorkflowByName(host, workflowName, rest.join(" "), opts)
 				: await api.resumeWorkflowByRunId(host, resumeRef!, opts);
+		if (runAlias && result.runId && sharedAliasRunId === result.runId) io.out(`run alias: ${runAlias}`);
+		return reportInvocation({
+			result,
+			parked: runParking.parked(),
+			limit,
+			interrupted: inject.signal?.aborted ?? false,
+			ledger,
+			io,
+			totals,
+			metricsFile: inject.metricsFile ?? process.env.RPIV_WF_METRICS_FILE,
+		});
 	} catch (err) {
 		ledger.terminal("failed", `rpiv-wf threw: ${err instanceof Error ? err.message : String(err)}`, EXIT.failed);
-		offExit();
 		throw err;
+	} finally {
+		releaseAlias?.();
+		offExit();
+		if (timer) clearTimeout(timer);
 	}
-	if (timer) clearTimeout(timer);
-	ledger.end();
-	const parked = runParking.parked();
-	let code: number;
-	if (parked.length > 0) {
-		for (const p of parked) io.out(formatPark(p));
-		io.out(`parked: answer with \`rpiv-wf answer ${parked[0]!.runId} ${parked[0]!.n} <choice>\``);
-		code = EXIT.parked;
-		ledger.terminal(
-			"parked",
-			parked.map((p) => `${p.stage ?? "stage"}: ${p.questions[0]?.question ?? "a question"}`).join("; "),
-			code,
-		);
-	} else if (limit && !(limit === "budget" && result.success)) {
-		io.err(`stopped (${limit})${result.runId ? ` — run ${result.runId}` : ""}`);
-		code = limit === "budget" ? EXIT.budget : EXIT.timeout;
-		ledger.terminal("aborted", `stopped at the ${limit} limit`, code);
-	} else if (inject.signal?.aborted) {
-		io.err("interrupted");
-		code = EXIT.interrupted;
-		ledger.terminal("aborted", "interrupted by a stop signal", code);
-	} else {
-		code = report(result, io);
-		if (result.success) ledger.terminal("completed", `${result.stagesCompleted} stage(s)`, code);
-		else ledger.terminal("failed", result.error ?? "unknown error", code);
-	}
-	offExit();
-	writeMetrics(inject.metricsFile ?? process.env.RPIV_WF_METRICS_FILE, {
-		exitCode: code,
-		runId: result.runId ?? parked[0]?.runId ?? null,
-		stagesCompleted: result.stagesCompleted,
-		error: result.error ?? null,
-		stopped: limit ?? null,
-		parked: parked.map((p) => ({ n: p.n, stage: p.stage, question: p.questions[0]?.question })),
-		usage: totals,
-	});
-	return code;
 }

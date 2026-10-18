@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunWorkflowResult } from "@juicesharp/rpiv-workflow";
@@ -7,12 +8,31 @@ import type { ClaudeHostDeps } from "./claude-host.js";
 import { EXIT, main, type WorkflowApi } from "./cli.js";
 import type { Kata } from "./kata.js";
 import { addPark, readParks, runsDir, updatePark } from "./park-store.js";
+import type { ProgressReport } from "./progress.js";
+
+import { registerRunAlias, resolveRunAlias } from "./run-alias.js";
 
 function plugin(): string {
 	const dir = mkdtempSync(join(tmpdir(), "rpiv-cli-plugin-"));
 	mkdirSync(join(dir, "skills", "commit"), { recursive: true });
 	writeFileSync(join(dir, "skills", "commit", "SKILL.md"), "---\nname: commit\n---\n");
 	return dir;
+}
+
+function repoWithWorktree(): { root: string; first: string; second: string } {
+	const root = mkdtempSync(join(tmpdir(), "rpiv-cli-worktrees-"));
+	const first = join(root, "first");
+	const second = join(root, "second");
+	mkdirSync(first);
+	const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, stdio: "ignore" });
+	git(first, "init", "-q");
+	git(first, "config", "user.email", "rpiv-test@example.invalid");
+	git(first, "config", "user.name", "RPIV Test");
+	writeFileSync(join(first, "README.md"), "fixture\n");
+	git(first, "add", "README.md");
+	git(first, "commit", "-qm", "fixture");
+	git(first, "worktree", "add", "-qb", "second", second);
+	return { root, first, second };
 }
 
 function harness(result: RunWorkflowResult = { success: true, stagesCompleted: 2, runId: "r1" }) {
@@ -60,6 +80,59 @@ describe("rpiv-wf", () => {
 		expect(h.err).toEqual(["[warning] w", "[error] pack broken"]);
 	});
 
+	it("prints project-wide authoring progress in Markdown and JSON without loading workflows", async () => {
+		const h = harness();
+		const report: ProgressReport = {
+			root: "/repo",
+			worktrees: ["/repo", "/repo-wt"],
+			topics: [],
+			kata: { available: true, issueCount: 3 },
+			overlapCandidates: [],
+			unlinkedIssues: [],
+			warnings: [],
+		};
+		const progressReport = vi.fn(() => report);
+		expect(
+			await main(
+				["progress"],
+				{ out: (line) => h.out.push(line), err: (line) => h.err.push(line) },
+				{ progressReport },
+			),
+		).toBe(EXIT.ok);
+		expect(h.out[0]).toContain("## RPIV authoring progress");
+		expect(progressReport).toHaveBeenCalledOnce();
+		expect(h.api.loadWorkflows).not.toHaveBeenCalled();
+		h.out.length = 0;
+		expect(
+			await main(
+				["progress", "--json"],
+				{ out: (line) => h.out.push(line), err: (line) => h.err.push(line) },
+				{ progressReport },
+			),
+		).toBe(EXIT.ok);
+		expect(JSON.parse(h.out[0]!)).toEqual(report);
+	});
+
+	it("returns failure for an incomplete Kata snapshot while still printing the partial report", async () => {
+		const h = harness();
+		const progressReport = () => ({
+			root: "/repo",
+			worktrees: ["/repo"],
+			topics: [],
+			kata: { available: false, issueCount: 0, unavailableReason: "daemon unavailable" },
+			overlapCandidates: [],
+			unlinkedIssues: [],
+			warnings: ["Kata unavailable: daemon unavailable"],
+		});
+		expect(
+			await main(
+				["progress"],
+				{ out: (line) => h.out.push(line), err: (line) => h.err.push(line) },
+				{ progressReport },
+			),
+		).toBe(EXIT.failed);
+		expect(h.out.join("\n")).toContain("Kata unavailable");
+	});
 	it("runs a workflow with the joined input, a registry host and the requested name", async () => {
 		const h = harness({ success: true, stagesCompleted: 3, runId: "r9", lastArtifact: "plan.md" });
 		const code = await h.go(["run", "build", "add", "dark", "mode", "--name", "dm", "--plugin-dir", plugin()]);
@@ -72,6 +145,60 @@ describe("rpiv-wf", () => {
 			{ name: "skill:commit", source: "skill" },
 		]);
 		expect(h.out).toEqual(["completed (run r9): 3 stage(s)", "artifact: plan.md"]);
+	});
+	it("auto-names RPIV runs from the workflow and brief", async () => {
+		const h = harness({ success: true, stagesCompleted: 1, runId: "r10" });
+		const { root, first, second } = repoWithWorktree();
+		mkdirSync(join(first, ".rpiv", "workflows", "runs"), { recursive: true });
+		writeFileSync(join(first, ".rpiv", "workflows", "runs", "r10.jsonl"), "{}\n");
+		vi.mocked(h.api.runWorkflowByName).mockImplementation(async (_ctx, _name, _input, opts) => {
+			const onWorkflowStart = (opts as { lifecycle: { onWorkflowStart: (ctx: never) => unknown } }).lifecycle
+				.onWorkflowStart;
+			await onWorkflowStart({
+				cwd: first,
+				runId: "r10",
+				workflow: "build",
+				totalStages: 1,
+				trigger: { kind: "programmatic", source: "rpiv-praxis" },
+				state: {},
+			} as never);
+			return { success: true, stagesCompleted: 1, runId: "r10" };
+		});
+		const code = await h.go(["run", "build", "Add dark mode", "--cwd", first, "--plugin-dir", plugin()]);
+		expect(code).toBe(EXIT.ok);
+		const opts = vi.mocked(h.api.runWorkflowByName).mock.calls[0]![3] as { name: string };
+		expect(opts.name).toMatch(/^rpiv-build-add-dark-mode-[0-9]{8}-[0-9]{6}-[a-f0-9]{4}$/);
+		expect(h.out).toContain(`run alias: ${opts.name}`);
+		const runs = harness();
+		expect(await runs.go(["runs", "--cwd", second])).toBe(EXIT.ok);
+		expect(runs.out[0]).toContain(`${opts.name}\tbuild\tr10`);
+		rmSync(root, { recursive: true, force: true });
+	});
+	it("publishes the alias at durable workflow start before an interrupted run returns", async () => {
+		const { root, first, second } = repoWithWorktree();
+		mkdirSync(join(first, ".rpiv", "workflows", "runs"), { recursive: true });
+		writeFileSync(join(first, ".rpiv", "workflows", "runs", "r11.jsonl"), "{}\n");
+		const h = harness();
+		let alias = "";
+		vi.mocked(h.api.runWorkflowByName).mockImplementation(async (_ctx, _name, _input, opts) => {
+			alias = (opts as { name: string }).name;
+			const onWorkflowStart = (opts as { lifecycle: { onWorkflowStart: (ctx: never) => unknown } }).lifecycle
+				.onWorkflowStart;
+			await onWorkflowStart({
+				cwd: first,
+				runId: "r11",
+				workflow: "build",
+				totalStages: 1,
+				trigger: { kind: "programmatic", source: "rpiv-praxis" },
+				state: {},
+			} as never);
+			throw new Error("simulated abrupt failure after durable start");
+		});
+		await expect(h.go(["run", "build", "finish the run", "--cwd", first, "--plugin-dir", plugin()])).rejects.toThrow(
+			"simulated abrupt failure",
+		);
+		expect(resolveRunAlias(second, alias)).toMatchObject({ runId: "r11", cwd: realpathSync(first) });
+		rmSync(root, { recursive: true, force: true });
 	});
 
 	it("--model reaches the engine as every stage's default model (kata rb2w)", async () => {
@@ -92,6 +219,39 @@ describe("rpiv-wf", () => {
 		const [ctx, ref] = vi.mocked(h.api.resumeWorkflowByRunId).mock.calls[0]!;
 		expect(ref).toBe("dm");
 		expect(ctx.maxConcurrency).toBe(2);
+	});
+	it("resolves a named run from another worktree and resumes in its origin", async () => {
+		const { root, first, second } = repoWithWorktree();
+		mkdirSync(join(first, ".rpiv", "workflows", "runs"), { recursive: true });
+		writeFileSync(
+			join(first, ".rpiv", "workflows", "runs", "run-1.jsonl"),
+			`${JSON.stringify({ runId: "run-1", workflow: "build", input: "topic", ts: "2026-10-18" })}\n`,
+		);
+		expect(registerRunAlias(first, "rpiv-build-topic-20261018-123456", "run-1", "build")).toBe(true);
+		const h = harness();
+		expect(
+			await h.go(["resume", "rpiv-build-topic-20261018-123456", "--cwd", second, "--plugin-dir", plugin()]),
+		).toBe(EXIT.ok);
+		const [ctx, ref] = vi.mocked(h.api.resumeWorkflowByRunId).mock.calls[0]!;
+		expect(ctx.cwd).toBe(realpathSync(first));
+		expect(ref).toBe("run-1");
+		const runs = harness();
+		expect(await runs.go(["runs", "--cwd", second])).toBe(EXIT.ok);
+		expect(runs.out[0]).toContain("rpiv-build-topic-20261018-123456\tbuild\trun-1");
+		rmSync(root, { recursive: true, force: true });
+	});
+	it("reports a stale cross-worktree alias instead of silently starting a new run", async () => {
+		const { root, first, second } = repoWithWorktree();
+		const runFile = join(first, ".rpiv", "workflows", "runs", "run-1.jsonl");
+		mkdirSync(join(first, ".rpiv", "workflows", "runs"), { recursive: true });
+		writeFileSync(runFile, "{}\n");
+		expect(registerRunAlias(first, "stale", "run-1", "build")).toBe(true);
+		rmSync(runFile);
+		const h = harness();
+		expect(await h.go(["resume", "stale", "--cwd", second])).toBe(EXIT.usage);
+		expect(h.api.resumeWorkflowByRunId).not.toHaveBeenCalled();
+		expect(h.err.join(" ")).toContain("stale or unreadable");
+		rmSync(root, { recursive: true, force: true });
 	});
 
 	it("exits 1 with the runner's error on failure", async () => {
