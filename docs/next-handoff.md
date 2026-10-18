@@ -24,6 +24,7 @@ The assistant loads and follows the actual skill, never an improvised substitute
 - Mutation check: replacing the pointer's `exactly one` with `all remaining` produced one failing test (22 passed); restoring it returned all 23 pointer tests to green as part of the 64-test run.
 - `npm run check:hosts`, targeted Biome with `--error-on-warnings`, root TypeScript `tsc --noEmit`, and `git diff --check` passed. Host exports were regenerated through `npm run export:hosts`.
 - Independent bounded adversarial review found no remaining concrete defects in the inspected pointer, shared rules, research/validate/discover handoffs, and tests. The reviewer correctly identified the temporary mutation; it was restored before final verification.
+- Full pre-merge checks found the original test file exceeded its size ratchet. The new contract cases were moved to `pipeline-next.test.ts`, leaving the original pointer tests unchanged. File-size and decision-code guards then passed; the four-file focused suite still passed all 64 tests. Full-repo Biome reported only four pre-existing informational suggestions, no warnings/errors.
 - These are instruction-contract, generation, injection, lint, and type checks. They do not establish live model/CLI end-to-end execution. No actual RPIV stage was launched.
 
 ## Delivery boundary
