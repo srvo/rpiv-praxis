@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { linkSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, readFileSync, rmdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runsDir } from "../state/paths.js";
 
@@ -78,6 +78,15 @@ export function acquireResumeLock(cwd: string, runId: string): () => void {
 
 	return () => {
 		const current = readOwner(ownerFile);
-		if (current?.token === owner.token) unlinkSync(ownerFile);
+		if (current?.token !== owner.token) return;
+		unlinkSync(ownerFile);
+		// Best-effort: drop the now-empty lock directory so runs/ holds only run
+		// artifacts. rmdir succeeds only when empty, so a contender that already
+		// reclaimed the lock (making root non-empty) keeps its owner record.
+		try {
+			rmdirSync(root);
+		} catch {
+			// Non-empty or already gone — leave it alone.
+		}
 	};
 }

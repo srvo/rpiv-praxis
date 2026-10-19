@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,6 +81,12 @@ describe("per-run resume lock", () => {
 		const old = new Date(Date.now() - 60_000);
 		utimesSync(ownerFile, old, old);
 		expect(() => acquireResumeLock(cwd, "run-3")).toThrow(ResumeAlreadyRunningError);
+	});
+	it("removes the empty lock directory on orderly release", () => {
+		setup();
+		const release = acquireResumeLock(cwd, "run-4");
+		release();
+		expect(existsSync(join(runsDir(cwd), "run-4.resume-lock"))).toBe(false);
 	});
 	it("rejects traversal run IDs before creating a lock path", () => {
 		setup();
