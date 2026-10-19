@@ -19,6 +19,7 @@ import { existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openParks, readParks, resolveRunId, runsDir } from "./park-store.js";
+import { resolveRunAlias } from "./run-alias.js";
 import { stepSkills } from "./steps.js";
 
 export const CLI_BIN = join(dirname(fileURLToPath(import.meta.url)), "bin", "rpiv-wf.mjs");
@@ -131,9 +132,15 @@ export function createTools(deps: McpDeps) {
 		},
 
 		async run_status(o: { run: string; cwd?: string }) {
-			const cwd = cwdOf(o);
+			const requested = cwdOf(o);
+			// Same order as the CLI (cli.ts resume/answer): a local run wins, and a shared
+			// alias is consulted only when no local run has this name. A shared alias points
+			// at the worktree that owns the run state, so a sibling must redirect there too.
+			const local = resolveRunId(requested, o.run);
+			const alias = local === undefined ? resolveRunAlias(requested, o.run) : undefined;
+			const cwd = alias?.cwd ?? requested;
 			const files = statusFiles(cwd, o.run);
-			const runId = resolveRunId(cwd, o.run);
+			const runId = alias?.runId ?? local;
 			const code = existsSync(files.exit) ? Number(readFileSync(files.exit, "utf8").trim()) : undefined;
 			const state =
 				code !== undefined
@@ -150,6 +157,7 @@ export function createTools(deps: McpDeps) {
 				run: o.run,
 				runId: runId ?? null,
 				state,
+				...(alias ? { origin: alias.cwd } : {}),
 				stages: runId ? stageRows(cwd, runId) : [],
 				waiting: waiting.map(({ n, stage, questions, status, kata }) => ({ n, stage, questions, status, kata })),
 				log: tail(files.log, 15),
