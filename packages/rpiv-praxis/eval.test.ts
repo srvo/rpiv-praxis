@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -64,6 +64,9 @@ describe("usage totals", () => {
 		expect(listFlag(" Read, Bash ,")).toEqual(["Read", "Bash"]);
 	});
 });
+
+/** A fixed code fingerprint: these tests must not depend on the state of this git checkout. */
+const CODE = () => "fixed-checkout";
 
 const spec: EvalSpec = {
 	name: "demo",
@@ -195,8 +198,15 @@ describe("runTrial", () => {
 		expect(r.checks).toEqual([{ name: "marker", pass: true, output: "found" }]);
 		const runs = calls.filter((c) => c.cmd !== "sh");
 		expect(runs[0]!.args.slice(1, 4)).toEqual(["step", "create-handoff", "note"]);
-		expect(runs[1]!.args.slice(1, 5)).toEqual(["answer", "eval-with-memory-1", "1", "1"]);
+		// The answer must address the run by the same alias it was started under, and the
+		// result must record that alias so the measurement traces back to its run.
+		const alias = runs[0]!.args[runs[0]!.args.indexOf("--name") + 1]!;
+		expect(alias).toMatch(/^eval-with-memory-1-[0-9a-z]+$/);
+		expect(r.alias).toBe(alias);
+		expect(runs[1]!.args.slice(1, 5)).toEqual(["answer", alias, "1", "1"]);
 		expect(runs[0]!.env.RPIV_WF_KATA).toBe("off");
+		// Trial names stay local: the shared alias registry must not grow one entry per attempt.
+		expect(runs[0]!.env.RPIV_NO_SHARED_ALIAS).toBe("1");
 		expect(runs[0]!.env.A).toBe("1");
 		expect(readFileSync(join(t.dir, "work", "CLAUDE.md"), "utf8")).toBe("memory\n");
 		expect(() => readFileSync(join(t.dir, "work", "node_modules"))).toThrow();
@@ -260,7 +270,7 @@ describe("runEval", () => {
 		const { specFile } = fixture();
 		const out: string[] = [];
 		const { deps, calls } = fakeDeps();
-		expect(await runEval(specFile, { dryRun: true, out: (l) => out.push(l), deps })).toBe(0);
+		expect(await runEval(specFile, { codeFingerprint: CODE, dryRun: true, out: (l) => out.push(l), deps })).toBe(0);
 		expect(out[0]).toBe("4 trial(s): 2 variant(s) × 2 repeat(s)");
 		expect(calls).toHaveLength(0);
 	});
@@ -269,12 +279,14 @@ describe("runEval", () => {
 		const { root, specFile } = fixture();
 		const out: string[] = [];
 		const code = await runEval(specFile, {
+			codeFingerprint: CODE,
 			outDir: join(root, "res"),
 			out: (l) => out.push(l),
 			deps: fakeDeps({ writeMarker: true }).deps,
 		});
 		expect(code).toBe(0);
-		const summaryPath = out.at(-1)!.replace("summary: ", "");
+		// The functional-status lines follow the summary line, so find it rather than assume it last.
+		const summaryPath = out.find((l) => l.startsWith("summary: "))!.replace("summary: ", "");
 		const dir = summaryPath.replace(/summary\.md$/, "");
 		expect(readFileSync(join(dir, "results.jsonl"), "utf8").trim().split("\n")).toHaveLength(4);
 		expect(readFileSync(summaryPath, "utf8")).toContain("| with-memory | 2 | 100% | 100% | $0.2500 |");
@@ -283,9 +295,9 @@ describe("runEval", () => {
 	it("rejects an unreadable spec or a missing fixture", async () => {
 		const { root } = fixture();
 		const out: string[] = [];
-		expect(await runEval(join(root, "nope.json"), { out: (l) => out.push(l) })).toBe(2);
+		expect(await runEval(join(root, "nope.json"), { codeFingerprint: CODE, out: (l) => out.push(l) })).toBe(2);
 		writeFileSync(join(root, "s2.json"), JSON.stringify({ ...spec, fixture: "missing" }));
-		expect(await runEval(join(root, "s2.json"), { out: (l) => out.push(l) })).toBe(2);
+		expect(await runEval(join(root, "s2.json"), { codeFingerprint: CODE, out: (l) => out.push(l) })).toBe(2);
 		expect(out.join("\n")).toContain("does not exist");
 	});
 });
@@ -327,6 +339,7 @@ describe("long unattended evals", () => {
 		writeFileSync(specFile, JSON.stringify({ ...spec, budgetUsd: 0.4 }));
 		const out: string[] = [];
 		const code = await runEval(specFile, {
+			codeFingerprint: CODE,
 			outDir: join(root, "res"),
 			out: (l) => out.push(l),
 			deps: fakeDeps().deps,
@@ -351,6 +364,7 @@ describe("long unattended evals", () => {
 		};
 		const out: string[] = [];
 		const code = await runEval(specFile, {
+			codeFingerprint: CODE,
 			outDir: join(root, "res"),
 			out: (l) => out.push(l),
 			deps: interrupting,
@@ -366,9 +380,14 @@ describe("long unattended evals", () => {
 	it("--continue runs only unrecorded trials, against the spec saved with the results", async () => {
 		const { root, specFile } = fixture();
 		const first: string[] = [];
-		await runEval(specFile, { outDir: join(root, "res"), out: (l) => first.push(l), deps: fakeDeps().deps });
+		await runEval(specFile, {
+			codeFingerprint: CODE,
+			outDir: join(root, "res"),
+			out: (l) => first.push(l),
+			deps: fakeDeps().deps,
+		});
 		const dir = first
-			.at(-1)!
+			.find((l) => l.startsWith("summary: "))!
 			.replace("summary: ", "")
 			.replace(/summary\.md$/, "");
 		// Simulate a crash: keep one finished trial plus a line cut short mid-write.
@@ -377,22 +396,36 @@ describe("long unattended evals", () => {
 		writeFileSync(specFile, "{ not even json"); // edits to the original no longer matter
 		const { deps, calls } = fakeDeps();
 		const out: string[] = [];
-		expect(await runEval(undefined, { continueDir: dir, out: (l) => out.push(l), deps })).toBe(0);
+		expect(await runEval(undefined, { codeFingerprint: CODE, continueDir: dir, out: (l) => out.push(l), deps })).toBe(
+			0,
+		);
 		expect(out[0]).toBe("4 trial(s): 2 variant(s) × 2 repeat(s); 1 already recorded, 3 to run");
 		expect(calls.filter((c) => c.cmd !== "sh")).toHaveLength(3);
 		expect(readFileSync(join(dir, "summary.md"), "utf8")).toContain("4 trial(s)");
 		const second = fakeDeps();
 		const secondOut: string[] = [];
-		expect(await runEval(undefined, { continueDir: dir, out: (l) => secondOut.push(l), deps: second.deps })).toBe(0);
+		expect(
+			await runEval(undefined, {
+				codeFingerprint: CODE,
+				continueDir: dir,
+				out: (l) => secondOut.push(l),
+				deps: second.deps,
+			}),
+		).toBe(0);
 		expect(second.calls.filter((c) => c.cmd !== "sh")).toHaveLength(0);
 		expect(readFileSync(join(dir, "summary.md"), "utf8")).toContain("spent $1.0000");
 	});
 	it("preserves a valid final result without LF during continuation", async () => {
 		const { root, specFile } = fixture();
 		const first: string[] = [];
-		await runEval(specFile, { outDir: join(root, "res"), out: (l) => first.push(l), deps: fakeDeps().deps });
+		await runEval(specFile, {
+			codeFingerprint: CODE,
+			outDir: join(root, "res"),
+			out: (l) => first.push(l),
+			deps: fakeDeps().deps,
+		});
 		const dir = first
-			.at(-1)!
+			.find((l) => l.startsWith("summary: "))!
 			.replace("summary: ", "")
 			.replace(/summary\.md$/, "");
 		const resultsPath = join(dir, "results.jsonl");
@@ -401,15 +434,182 @@ describe("long unattended evals", () => {
 
 		const { deps, calls } = fakeDeps();
 		const out: string[] = [];
-		expect(await runEval(undefined, { continueDir: dir, out: (l) => out.push(l), deps })).toBe(0);
+		expect(await runEval(undefined, { codeFingerprint: CODE, continueDir: dir, out: (l) => out.push(l), deps })).toBe(
+			0,
+		);
 		expect(out[0]).toContain("2 already recorded, 2 to run");
 		expect(calls.filter((c) => c.cmd !== "sh")).toHaveLength(2);
 		expect(readFileSync(resultsPath, "utf8").trim().split("\n")).toHaveLength(4);
 
 		const resumedAgain = fakeDeps();
-		expect(await runEval(undefined, { continueDir: dir, out: () => {}, deps: resumedAgain.deps })).toBe(0);
+		expect(
+			await runEval(undefined, { codeFingerprint: CODE, continueDir: dir, out: () => {}, deps: resumedAgain.deps }),
+		).toBe(0);
 		expect(resumedAgain.calls.filter((c) => c.cmd !== "sh")).toHaveLength(0);
 	});
+	it("emits one functional-status item per recorded trial, on the code it ran", async () => {
+		const { root, specFile } = fixture();
+		const items: Array<{ payload: { variant: string; functional: boolean; codeFingerprint: string } }> = [];
+		const out: string[] = [];
+		expect(
+			await runEval(specFile, {
+				codeFingerprint: () => "code-v1",
+				activity: { emit: (item) => items.push(item as never) },
+				outDir: join(root, "res"),
+				out: (l) => out.push(l),
+				deps: fakeDeps().deps,
+			}),
+		).toBe(0);
+		// One item per trial in the spec (2 variants x 2 repeats), each on the code it ran.
+		expect(items).toHaveLength(4);
+		expect(items.every((i) => i.payload.codeFingerprint === "code-v1")).toBe(true);
+		expect(items.map((i) => i.payload.variant).sort()).toEqual([
+			"no-memory",
+			"no-memory",
+			"with-memory",
+			"with-memory",
+		]);
+		expect(out.join("\n")).not.toContain("functional:"); // a supplied sink owns the record
+	});
+
+	it("prints a functional summary when no sink is supplied", async () => {
+		const { root, specFile } = fixture();
+		const out: string[] = [];
+		expect(
+			await runEval(specFile, {
+				codeFingerprint: () => "code-v1",
+				outDir: join(root, "res"),
+				out: (l) => out.push(l),
+				deps: fakeDeps().deps,
+			}),
+		).toBe(0);
+		// This fixture's `marker` check does not pass, so the summary must say so rather than
+		// claim health: the count is the report, not a floor it should clear.
+		expect(out.join("\n")).toContain("functional: 0/4 trial(s) on code code-v1");
+		expect(out.join("\n")).toContain("demo · with-memory #1: not functional (completed)");
+	});
+
+	describe("--continue on changed code", () => {
+		/** A finished eval whose recorded results are cut back to one trial, as if it crashed. */
+		async function interrupted(fingerprint: string) {
+			const { root, specFile } = fixture();
+			const first: string[] = [];
+			await runEval(specFile, {
+				codeFingerprint: () => fingerprint,
+				outDir: join(root, "res"),
+				out: (l) => first.push(l),
+				deps: fakeDeps().deps,
+			});
+			const dir = first
+				.find((l) => l.startsWith("summary: "))!
+				.replace("summary: ", "")
+				.replace(/summary\.md$/, "");
+			const lines = readFileSync(join(dir, "results.jsonl"), "utf8").trim().split("\n");
+			writeFileSync(join(dir, "results.jsonl"), `${lines[0]}\n`);
+			return dir;
+		}
+
+		it("records the code fingerprint a fresh eval started on", async () => {
+			const { root, specFile } = fixture();
+			const out: string[] = [];
+			await runEval(specFile, {
+				codeFingerprint: () => "code-v1",
+				outDir: join(root, "res"),
+				out: (l) => out.push(l),
+				deps: fakeDeps().deps,
+			});
+			const dir = out
+				.find((l) => l.startsWith("summary: "))!
+				.replace("summary: ", "")
+				.replace(/summary\.md$/, "");
+			expect(JSON.parse(readFileSync(join(dir, "provenance.json"), "utf8"))).toMatchObject({
+				codeFingerprint: "code-v1",
+			});
+		});
+
+		it("refuses when the code changed, and runs no trial", async () => {
+			const dir = await interrupted("code-v1");
+			const { deps, calls } = fakeDeps();
+			const out: string[] = [];
+			expect(
+				await runEval(undefined, {
+					codeFingerprint: () => "code-v2",
+					continueDir: dir,
+					out: (l) => out.push(l),
+					deps,
+				}),
+			).toBe(2);
+			expect(out.join("\n")).toMatch(/refusing to continue: the code changed since this eval started/);
+			expect(calls.filter((c) => c.cmd !== "sh")).toHaveLength(0);
+		});
+
+		it("continues on changed code only with --allow-drift, and says so", async () => {
+			const dir = await interrupted("code-v1");
+			const { deps, calls } = fakeDeps();
+			const out: string[] = [];
+			expect(
+				await runEval(undefined, {
+					codeFingerprint: () => "code-v2",
+					allowDrift: true,
+					continueDir: dir,
+					out: (l) => out.push(l),
+					deps,
+				}),
+			).toBe(0);
+			expect(out.join("\n")).toContain("warning: continuing on code that differs from the recorded run");
+			expect(calls.filter((c) => c.cmd !== "sh")).toHaveLength(3);
+		});
+
+		it("refuses an eval that predates provenance unless --allow-drift is given", async () => {
+			const dir = await interrupted("code-v1");
+			rmSync(join(dir, "provenance.json"));
+			const out: string[] = [];
+			expect(
+				await runEval(undefined, {
+					codeFingerprint: CODE,
+					continueDir: dir,
+					out: (l) => out.push(l),
+					deps: fakeDeps().deps,
+				}),
+			).toBe(2);
+			expect(out.join("\n")).toMatch(/predates provenance tracking/);
+		});
+
+		it("attributes trials it did not run to the code they were recorded on", async () => {
+			// --allow-drift: the eval started on code-v1; this run is on code-v2. The trials it
+			// does not rerun must not be claimed as measurements of code-v2.
+			const dir = await interrupted("code-v1");
+			const items: Array<{ payload: { codeFingerprint: string } }> = [];
+			expect(
+				await runEval(undefined, {
+					codeFingerprint: () => "code-v2",
+					allowDrift: true,
+					activity: { emit: (item) => items.push(item as never) },
+					continueDir: dir,
+					out: () => {},
+					deps: fakeDeps().deps,
+				}),
+			).toBe(0);
+			expect(items.length).toBeGreaterThan(0);
+			expect(items.some((i) => i.payload.codeFingerprint === "code-v1")).toBe(true); // the recorded trial
+			expect(items.some((i) => i.payload.codeFingerprint === "code-v2")).toBe(true); // the rerun trials
+		});
+
+		it("continues on the same code without any warning", async () => {
+			const dir = await interrupted("code-v1");
+			const out: string[] = [];
+			expect(
+				await runEval(undefined, {
+					codeFingerprint: () => "code-v1",
+					continueDir: dir,
+					out: (l) => out.push(l),
+					deps: fakeDeps().deps,
+				}),
+			).toBe(0);
+			expect(out.join("\n")).not.toMatch(/warning|refusing/);
+		});
+	});
+
 	it.skipIf(process.platform === "win32")(
 		"hard-kills timed-out descendants and closes their output pipes",
 		async () => {

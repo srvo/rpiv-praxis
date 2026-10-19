@@ -64,7 +64,7 @@ const USAGE = `usage:
   rpiv-wf step <skill> [args...] [options]
   rpiv-wf steps
   rpiv-wf eval <spec.json> [--dry-run] [--out <dir>]
-  rpiv-wf eval --continue <eval-results dir>   finish an interrupted eval
+  rpiv-wf eval --continue <eval-results dir>   finish an interrupted eval (--allow-drift: even if the code changed)
   rpiv-wf inbox
   rpiv-wf runs                         named runs shared by this repo's worktrees
   rpiv-wf progress [--json]            all authoring topics across linked worktrees + Kata
@@ -213,6 +213,7 @@ export async function main(
 				"stage-max-cost": { type: "string" },
 				"stage-max-tokens": { type: "string" },
 				continue: { type: "string" },
+				"allow-drift": { type: "boolean" },
 				"dry-run": { type: "boolean" },
 				json: { type: "boolean" },
 				kata: { type: "string" },
@@ -244,6 +245,7 @@ export async function main(
 		"stage-max-cost"?: string;
 		"stage-max-tokens"?: string;
 		continue?: string;
+		"allow-drift"?: boolean;
 		"dry-run"?: boolean;
 		json?: boolean;
 		help?: boolean;
@@ -298,6 +300,7 @@ export async function main(
 			outDir: values.out,
 			dryRun: values["dry-run"],
 			continueDir: values.continue ? resolve(values.continue) : undefined,
+			allowDrift: values["allow-drift"],
 			out: io.out,
 			signal: inject.signal,
 		});
@@ -397,6 +400,9 @@ export async function main(
 		return EXIT.usage;
 	}
 	const workflowName = command === "step" ? stepWorkflowName(target!) : target!;
+	// RPIV_NO_SHARED_ALIAS keeps a run's name local: evals name every trial, and publishing
+	// each attempt to the shared registry would grow it one entry per trial.
+	const shareName = process.env.RPIV_NO_SHARED_ALIAS !== "1";
 	const runAlias =
 		command === "run" || command === "step"
 			? (values.name ?? generateRunAlias(workflowName, rest.join(" ")))
@@ -509,7 +515,7 @@ export async function main(
 		signal: stop.signal,
 		lifecycle: mergeLifecycles(ledger.lifecycle, runParking.lifecycle, {
 			onWorkflowStart: (ctx) => {
-				if (runAlias) {
+				if (runAlias && shareName) {
 					if (registerRunAlias(cwd, runAlias, ctx.runId, workflowName)) sharedAliasRunId = ctx.runId;
 					else warn(`could not share run alias "${runAlias}"; its run files remain available only under ${cwd}`);
 				}
@@ -524,7 +530,7 @@ export async function main(
 	let releaseAlias: (() => void) | undefined;
 	try {
 		try {
-			if (runAlias) releaseAlias = reserveRunAlias(cwd, runAlias);
+			if (runAlias && shareName) releaseAlias = reserveRunAlias(cwd, runAlias);
 		} catch (error) {
 			io.err(error instanceof Error ? error.message : String(error));
 			return EXIT.usage;

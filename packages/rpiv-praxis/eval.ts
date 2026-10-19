@@ -17,12 +17,16 @@
  * caps the whole eval; results are appended as each trial finishes, and
  * `--continue` re-runs only the trials an interrupted eval did not record.
  *
+ * `--continue` refuses when the code has changed since the eval started (it records
+ * a fingerprint of the checkout); `--allow-drift` continues anyway and says so.
+ *
  * Output: <out>/<name>-<stamp>/results.jsonl (one row per trial, written as
  * each finishes), summary.md (per-variant comparison), trials/<variant>__<n>/
  * (the working copy, rpiv-wf's log, metrics).
  */
 
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import {
 	appendFileSync,
 	cpSync,
@@ -35,6 +39,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { type ActivitySink, memorySink, trialActivity } from "./eval-activity.js";
+import { checkContinuable, codeFingerprint, recordedProvenance, writeProvenance } from "./eval-provenance.js";
 import { CLI_BIN, EXIT_STATE } from "./mcp.js";
 import { emptyTotals, mergeTotals, type UsageTotals } from "./usage.js";
 
@@ -90,6 +96,8 @@ export interface TrialResult {
 	usage: UsageTotals;
 	checks: Array<{ name: string; pass: boolean; output: string }>;
 	dir: string;
+	/** The rpiv-wf run alias this attempt measured under (traceable with `rpiv-wf runs`). */
+	alias?: string;
 	error?: string;
 }
 
@@ -208,6 +216,25 @@ function assertFixtureSymlinksStayWithinRoot(fixture: string): void {
 	visit(root);
 }
 
+/**
+ * A fresh identity for one attempt at a trial.
+ *
+ * An eval is a measurement of the code as it was that day, and the workflows and
+ * skills it runs change minute to minute. So an attempt never inherits an identity:
+ * a stable name would let a later attempt (a `--continue`, or the same trial planned
+ * from another eval directory) reuse an earlier attempt's shared alias and be refused.
+ */
+export function newTrialAttempt(now: number): string {
+	return `${now.toString(36)}${randomBytes(3).toString("hex")}`;
+}
+
+/** Run alias for one attempt: `eval-<variant>-<repeat>-<attempt>`, capped at 64 characters. */
+export function trialRunAlias(t: Trial, attempt: string): string {
+	const base = `eval-${t.variant.name}-${t.repeat}`;
+	const suffix = `-${attempt}`;
+	return `${base.slice(0, 64 - suffix.length)}${suffix}`;
+}
+
 export async function runTrial(spec: EvalSpec, fixture: string, t: Trial, deps: EvalDeps): Promise<TrialResult> {
 	const work = join(t.dir, "work");
 	const log = join(t.dir, "rpiv-wf.log");
@@ -226,6 +253,7 @@ export async function runTrial(spec: EvalSpec, fixture: string, t: Trial, deps: 
 		checks: [],
 		dir: t.dir,
 	};
+	const attempt = newTrialAttempt(deps.now());
 	rmSync(t.dir, { recursive: true, force: true }); // a half-finished trial from an interrupted eval
 	mkdirSync(t.dir, { recursive: true });
 	cpSync(fixture, work, {
@@ -241,7 +269,9 @@ export async function runTrial(spec: EvalSpec, fixture: string, t: Trial, deps: 
 		result.error = error instanceof Error ? error.message : String(error);
 		return result;
 	}
-	const env = { ...process.env, ...t.variant.env, RPIV_WF_KATA: "off" };
+	// A trial names every run; keep those names local so the shared alias registry does not
+	// grow one entry per attempt (the attempt alias is still recorded on the result).
+	const env = { ...process.env, ...t.variant.env, RPIV_WF_KATA: "off", RPIV_NO_SHARED_ALIAS: "1" };
 	const started = deps.now();
 	if (t.variant.setup) {
 		const s = await deps.run("sh", ["-c", t.variant.setup], { cwd: work, env, log, timeoutMs });
@@ -252,7 +282,8 @@ export async function runTrial(spec: EvalSpec, fixture: string, t: Trial, deps: 
 	}
 	const flags = [...variantFlags(t.variant, work), "--timeout", String(minutes)];
 	const answers = [...(t.variant.answers ?? spec.answers ?? [])];
-	const name = `eval-${t.variant.name}-${t.repeat}`.slice(0, 64);
+	const name = trialRunAlias(t, attempt);
+	result.alias = name;
 	let args = spec.step
 		? ["step", spec.step, ...(spec.input ? [spec.input] : []), "--name", name, ...flags]
 		: ["run", spec.workflow!, ...(spec.input ? [spec.input] : []), "--name", name, ...flags];
@@ -370,6 +401,12 @@ export async function runEval(
 		outDir?: string;
 		dryRun?: boolean;
 		continueDir?: string;
+		/** Continue even though the code changed since the eval started (--allow-drift). */
+		allowDrift?: boolean;
+		/** The code under test's fingerprint; defaults to this checkout (injected by tests). */
+		codeFingerprint?: () => string;
+		/** Where functional-status items go; defaults to an in-memory sink printed at the end. */
+		activity?: ActivitySink;
 		out: (l: string) => void;
 		deps?: EvalDeps;
 		signal?: AbortSignal;
@@ -393,6 +430,16 @@ export async function runEval(
 	const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 	const outDir =
 		opts.continueDir ?? resolve(opts.outDir ?? join(dirname(specFile!), "eval-results"), `${spec.name}-${stamp}`);
+	const current = (opts.codeFingerprint ?? (() => codeFingerprint(dirname(CLI_BIN))))();
+	if (opts.continueDir) {
+		const gate = checkContinuable(outDir, current, opts.allowDrift === true);
+		if (!gate.ok) {
+			opts.out(`refusing to continue: ${gate.message}`);
+			return 2;
+		}
+		if (gate.drift)
+			opts.out(`warning: continuing on code that differs from the recorded run; results mix code versions`);
+	}
 	if (!opts.dryRun) repairResultsTail(outDir);
 	const done = recorded(outDir);
 	const trials = plan(spec, outDir);
@@ -406,8 +453,11 @@ export async function runEval(
 	const deps = opts.deps ?? nodeEvalDeps();
 	mkdirSync(outDir, { recursive: true });
 	opts.out(`results: ${outDir}`);
-	if (!saved)
+	if (!saved) {
 		writeFileSync(join(outDir, "spec.json"), `${JSON.stringify({ ...spec, fixtureDir: fixture }, null, "\t")}\n`);
+		writeProvenance(outDir, current);
+	}
+	const sink = opts.activity ?? memorySink();
 	const results: TrialResult[] = [...done.values()];
 	let spent = results.reduce((n, r) => n + r.usage.costUsd, 0);
 	let next = 0;
@@ -430,11 +480,16 @@ export async function runEval(
 			}
 			results.push(r);
 			appendFileSync(join(outDir, "results.jsonl"), `${JSON.stringify(r)}\n`);
+			sink.emit(trialActivity(spec.name, current, r));
 			opts.out(
 				`  done ${r.variant} #${r.repeat}: ${r.state}, $${r.usage.costUsd.toFixed(4)}, ${(r.wallMs / 1000).toFixed(1)}s`,
 			);
 		}
 	};
+	// Trials this run did not execute still belong in the record: attribute each to the code
+	// their eval recorded, so a --allow-drift run never claims old results ran on new code.
+	const recordedCode = recordedProvenance(outDir);
+	for (const r of done.values()) sink.emit(trialActivity(spec.name, recordedCode ?? current, r));
 	await Promise.all(Array.from({ length: Math.min(spec.parallel ?? 1, Math.max(todo.length, 1)) }, worker));
 	const left = todo.length - next + interrupted;
 	if (opts.signal?.aborted && left > 0) {
@@ -446,6 +501,12 @@ export async function runEval(
 	results.sort((a, b) => a.variant.localeCompare(b.variant) || a.repeat - b.repeat);
 	writeFileSync(join(outDir, "summary.md"), summarize(spec, results, { spent, skipped }));
 	opts.out(`summary: ${join(outDir, "summary.md")}`);
+	if (!opts.activity && "items" in sink) {
+		const items = (sink as ReturnType<typeof memorySink>).items();
+		const functional = items.filter((i) => i.payload.functional).length;
+		opts.out(`functional: ${functional}/${items.length} trial(s) on code ${current.slice(0, 12)}`);
+		for (const i of items) opts.out(`  ${i.title}`);
+	}
 	return skipped > 0 ? 3 : 0;
 }
 

@@ -178,7 +178,37 @@ has spent that much (exit 3); trials in flight finish. Each trial has its own
 30 seconds later.
 A trial that parks with no scripted answer left ends as `parked` and counts
 as incomplete; `answers` (`"1"` = the first option) keeps a night moving.
-Trials run with `RPIV_WF_KATA=off`, so an eval never files tickets.
+Trials run with `RPIV_WF_KATA=off`, so an eval never files tickets, and with
+`RPIV_NO_SHARED_ALIAS=1`, so a trial's name stays local instead of adding an
+entry to the shared run-alias registry for every attempt.
+
+### What code did this eval measure?
+
+An eval is a measurement of the code as it was that day, and the workflows and
+skills it runs change constantly. So the eval records the code it measured:
+
+- A fresh eval writes `provenance.json` beside `spec.json`: a fingerprint of the
+  checkout (`rpiv-wf` lives in it) covering HEAD, every uncommitted change, and
+  untracked file contents. A checkout git cannot describe records `unversioned`.
+- `--continue` **refuses** when that fingerprint no longer matches, naming both
+  values, and runs no trial. Mixed-code results are not a comparison.
+- `--allow-drift` continues anyway and prints a warning. Trials it does not
+  rerun keep the code they were recorded on; only the rerun trials carry the
+  current code.
+
+### Is the workflow functional?
+
+Every recorded trial emits one `observed` item — the trial, the run attempt,
+the code it ran on, and whether it was functional. *Functional* means the run
+reached the completed exit state and every check the spec declares passed; a
+park, stop, error or failed check is reported as not functional, with the reason.
+
+The item is shaped for `activity.timeline` (`sourceType: "eval_trial"`,
+`sourceId: <eval>:<variant>#<repeat>@<attempt>`, payload carrying
+`codeFingerprint`, `functional`, `checksFailed`, `costUsd`). Nothing is written
+to a local file and no database is required: items go to a sink, and the default
+sink prints a `functional: N/M trial(s) on code <fp>` summary with one line per
+trial. Persisting these rows is a separate, deliberate step.
 
 Known limits: the cost a reattached stage spent before a failed run is
 counted again when `resume` reattaches it (reporting only; nothing is charged
