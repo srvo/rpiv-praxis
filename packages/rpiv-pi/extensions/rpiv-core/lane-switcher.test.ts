@@ -35,7 +35,10 @@ const mockSubscribeLanes = vi.mocked(subscribeLanes);
 
 type LanesCtx = { hasUI: boolean; ui: ExtensionUIContext };
 type LanesHandler = (args: string, ctx: LanesCtx) => Promise<void>;
-type SessionStartHandler = (event: unknown, ctx: { hasUI?: boolean; ui?: ExtensionUIContext }) => Promise<void>;
+type SessionStartHandler = (
+	event: unknown,
+	ctx: { hasUI?: boolean; ui?: ExtensionUIContext; cwd?: string },
+) => Promise<void>;
 type ShortcutHandler = (ctx: { hasUI: boolean; ui: ExtensionUIContext }) => void | Promise<void>;
 
 function register(): {

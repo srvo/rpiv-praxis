@@ -344,8 +344,11 @@ export class ClaudeWorkflowHost implements WorkflowHostContext {
 					const file = answered.sessionFile ?? this.locate(answered.sessionId);
 					await child.adopt(answered.sessionId, file ?? "", file);
 					child.answered = true;
+					// The answer is delivered when a turn actually issues a query, not when it
+					// is queued: `turn` returns at its already-aborted guard without calling
+					// query(), and marking the park resumed there would strand the answer.
+					child.pendingDelivery = answered.delivered;
 					await child.sendUserMessage(answered.message);
-					answered.delivered();
 				} else {
 					await child.sendUserMessage(options.prompt);
 				}
@@ -377,6 +380,8 @@ class ClaudeChildSession implements WorkflowSessionContext {
 	private turnStart = 0;
 	/** A person's answer reached this session (a resumed park): a checkpoint may complete. */
 	answered = false;
+	/** Marks a resumed park delivered; runs only once the sending turn starts a query. */
+	pendingDelivery: (() => void) | undefined;
 
 	constructor(
 		private readonly parent: ClaudeWorkflowHost,
@@ -532,12 +537,18 @@ class ClaudeChildSession implements WorkflowSessionContext {
 		this.branch.push(userEntry(prompt));
 		this.opts.onTurnStart?.(this.stage);
 		if (this.abort.signal.aborted || this.opts.halt?.aborted) {
+			// Nothing reached the stage, so the answer was not delivered: drop the pending
+			// mark without calling it, or a later turn would mark the park resumed for it.
+			this.pendingDelivery = undefined;
 			stampStop(this.branch, "aborted", start);
 			return;
 		}
 		try {
 			const options = this.options();
 			const run = this.deps.query({ prompt: translateSkillPrompt(prompt, this.opts.catalog), options });
+			// Past the abort guard above, so this turn really reached the stage.
+			this.pendingDelivery?.();
+			this.pendingDelivery = undefined;
 			const toolCalls: Record<string, number> = {};
 			for await (const msg of run) {
 				if ("session_id" in msg && typeof msg.session_id === "string" && msg.session_id) {
