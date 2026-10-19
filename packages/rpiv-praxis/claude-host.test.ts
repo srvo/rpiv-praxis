@@ -393,6 +393,54 @@ describe("ClaudeWorkflowHost — parking", () => {
 		expect(delivered).toHaveBeenCalledOnce();
 		expect(child.sessionManager.getSessionId()).toBe("parked-s");
 	});
+
+	it("keeps the answer deliverable when an already-aborted turn sends no queries", async () => {
+		// Resume raced a stop: `turn` returns at its already-aborted guard before
+		// calling query(), so nothing reached the stage. Marking the park resumed
+		// here loses the answer permanently — it can no longer be re-answered.
+		const delivered = vi.fn();
+		const parking = parkingStub({
+			answerFor: vi.fn(() => ({ sessionId: "parked-s", message: "Answer: Blue", delivered })),
+		});
+		const sdk = fakeSdk([() => [say("parked-s", "painted blue"), result("parked-s")]]);
+		const stop = new AbortController();
+		stop.abort();
+		await run(host(sdk.deps, { parking, halt: stop.signal }).h, { stage: "plan" });
+		expect(sdk.calls).toHaveLength(0);
+		expect(delivered).not.toHaveBeenCalled();
+	});
+
+	it("a later live turn never delivers an answer that an earlier aborted turn dropped", async () => {
+		const delivered = vi.fn();
+		const parking = parkingStub({
+			answerFor: vi.fn(() => ({ sessionId: "parked-s", message: "Answer: Blue", delivered })),
+		});
+		const sdk = fakeSdk([() => [say("parked-s", "follow-up done"), result("parked-s")]]);
+		// The first (answer) turn sees the halt; the second turn does not.
+		let polls = 0;
+		const halt = {
+			get aborted() {
+				return polls++ === 0;
+			},
+		} as AbortSignal;
+		await run(host(sdk.deps, { parking, halt }).h, { stage: "plan" }, async (c) => {
+			await c.sendUserMessage("follow-up");
+		});
+		expect(sdk.calls).toHaveLength(1);
+		expect(sdk.calls[0]).toMatchObject({ prompt: "follow-up" });
+		expect(delivered).not.toHaveBeenCalled();
+	});
+
+	it("delivers the answer only after a turn actually reached the stage", async () => {
+		const delivered = vi.fn();
+		const parking = parkingStub({
+			answerFor: vi.fn(() => ({ sessionId: "parked-s", message: "Answer: Blue", delivered })),
+		});
+		const sdk = fakeSdk([() => [say("parked-s", "painted blue"), result("parked-s")]]);
+		await run(host(sdk.deps, { parking }).h, { stage: "plan" });
+		expect(sdk.calls).toHaveLength(1);
+		expect(delivered).toHaveBeenCalledOnce();
+	});
 });
 
 describe("ClaudeWorkflowHost — usage is per turn, not cumulative", () => {

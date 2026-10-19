@@ -11,7 +11,8 @@
  *     boundary can't split `register` and `get` onto different slots.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as first from "./execution-host.js";
 import {
 	__resetWorkflowExecutionHost,
 	getWorkflowExecutionProvider,
@@ -79,15 +80,25 @@ describe("execution-host seam", () => {
 		expect(getWorkflowExecutionProvider()).toBeUndefined();
 	});
 
-	// The provider lives on a process-global Symbol.for slot, not a
-	// module-local `let`. A second module instance (peer-dependency duplication)
-	// must read the SAME slot, or register/get silently split and the runner
-	// degrades to live. Re-importing the module proves register-then-get crosses
-	// the (cached, but the contract is global-slot) instance.
-	it("survives a re-import of the module (process-global slot)", async () => {
+	// The provider lives on a process-global Symbol.for slot, not a module-local
+	// `let`. A second module instance (peer-dependency duplication) must read the
+	// SAME slot, or register/get silently split and the runner degrades to live.
+	// A plain re-import returns the cached instance and proves nothing, so reset
+	// the module registry first to force a genuinely separate module graph.
+	it("a second module instance reads the same process-global slot", async () => {
 		const provider = fakeProvider();
 		registerWorkflowExecutionHost(provider);
-		const reimported = await import("./execution-host.js");
-		expect(reimported.getWorkflowExecutionProvider()).toBe(provider);
+		vi.resetModules();
+		const second = await import("./execution-host.js");
+		expect(second).not.toBe(first); // a genuinely separate module instance
+		expect(second.getWorkflowExecutionProvider()).toBe(provider);
+	});
+
+	it("registration through a second instance is visible to the first", async () => {
+		vi.resetModules();
+		const second = await import("./execution-host.js");
+		const provider = fakeProvider();
+		second.registerWorkflowExecutionHost(provider);
+		expect(getWorkflowExecutionProvider()).toBe(provider);
 	});
 });

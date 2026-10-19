@@ -24,6 +24,7 @@ import { showLaneConsole } from "./lane-console.js";
 import { LaneDock } from "./lane-dock.js";
 import { LaneDockEditor } from "./lane-dock-editor.js";
 import { isLaneRelayUiContext } from "./lane-relay-ui.js";
+import { rerunRefusal } from "./rerun-notice.js";
 import {
 	getFocusedRun,
 	laneCount,
@@ -174,10 +175,11 @@ export function registerLaneSwitcher(pi: ExtensionAPI): void {
 						void runner
 							.resumeWorkflowByRunId(hostCtx, runId)
 							.then((r) => {
-								// Surface ONLY a pre-run refusal (no JSONL created) — an in-run failure is
-								// notified by the stage machinery; a success reactivates the lane reactively.
-								// r.runId === undefined distinguishes a refusal (resolveRun/load miss).
-								if (!r.success && r.runId === undefined && r.error) ui.notify(r.error, "error");
+								// Surface every refusal, including a lease refusal that carries the runId
+								// (another writer already owns that run). An in-run failure is notified by
+								// the stage machinery; a success reactivates the lane reactively.
+								const refusal = rerunRefusal(r);
+								if (refusal) ui.notify(refusal, "error");
 							})
 							.catch((e) => ui.notify(`rpiv: resume failed — ${String(e)}`, "error"));
 					} catch (err) {
