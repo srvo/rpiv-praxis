@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
 	buildProgressReport,
@@ -9,6 +9,7 @@ import {
 	formatProgressMarkdown,
 	type ProgressIssue,
 	readKataIssues,
+	reportProgress,
 } from "./progress.js";
 
 const roots: string[] = [];
@@ -239,5 +240,68 @@ describe("project-wide authoring progress", () => {
 		artifact(first, "goals", "2026-10-18_10-00-00_one.md", "---\ntopic: One\nstatus: started\n---\n");
 		const args: [string, string[], { issues: ProgressIssue[] }] = [first, [first], { issues: [issue()] }];
 		expect(JSON.stringify(buildProgressReport(...args))).toBe(JSON.stringify(buildProgressReport(...args)));
+	});
+});
+
+/** Run `fn` with a fake `kata` binary first on PATH; `script` is the shell body. */
+function withFakeKata<T>(script: string, fn: () => T): T {
+	const root = mkdtempSync(join(tmpdir(), "rpiv-progress-kata-"));
+	roots.push(root);
+	const bin = join(root, "bin");
+	mkdirSync(bin);
+	const kata = join(bin, "kata");
+	writeFileSync(kata, `#!/bin/sh\n${script}\n`);
+	chmodSync(kata, 0o755);
+	const previous = process.env.PATH;
+	process.env.PATH = `${bin}${delimiter}${previous ?? ""}`;
+	try {
+		return fn();
+	} finally {
+		if (previous === undefined) delete process.env.PATH;
+		else process.env.PATH = previous;
+	}
+}
+
+describe("progress — stale candidates and Kata boundaries", () => {
+	it("orders stale unlinked issues oldest first, without mutating them", () => {
+		const { first } = repoWithWorktree();
+		const report = buildProgressReport(
+			first,
+			[first],
+			{
+				issues: [
+					issue({
+						short_id: "mid",
+						qualified_id: "rpiv-praxis#mid",
+						title: "Middle",
+						updated_at: "2020-06-01T00:00:00Z",
+					}),
+					issue({
+						short_id: "old",
+						qualified_id: "rpiv-praxis#old",
+						title: "Oldest",
+						updated_at: "2019-01-01T00:00:00Z",
+					}),
+				],
+			},
+			new Date("2026-10-18T00:00:00Z"),
+		);
+		expect(report.unlinkedIssues.map((c) => c.qualifiedId)).toEqual(["rpiv-praxis#old", "rpiv-praxis#mid"]);
+	});
+
+	it("reports a Kata response that is not JSON as unavailable instead of throwing", () => {
+		const { first } = repoWithWorktree();
+		withFakeKata("printf '%s\\n' 'not json at all'", () => {
+			expect(readKataIssues(first)).toEqual({ issues: [], unavailableReason: "Kata returned invalid JSON" });
+		});
+	});
+
+	it("reportProgress reads Kata through the same read-only list command", () => {
+		const { first } = repoWithWorktree();
+		withFakeKata("printf '%s\\n' '{\"issues\":[]}'", () => {
+			const report = reportProgress(first);
+			expect(report.kata.available).toBe(true);
+			expect(report.root).toBe(resolve(first));
+		});
 	});
 });
