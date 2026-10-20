@@ -104,6 +104,29 @@ export function openParks(cwd: string): Park[] {
 		.filter((p) => p.status !== "resumed")
 		.sort((a, b) => a.askedAt.localeCompare(b.askedAt));
 }
+/** An open park plus the worktree whose run state holds it. */
+export interface LocatedPark extends Park {
+	cwd: string;
+}
+
+/**
+ * Open parks across worktrees, oldest first. Run state lives in the worktree
+ * that started the run, so a person reading the inbox from a sibling (the main
+ * checkout, say) would otherwise see nothing waiting.
+ */
+export function openParksIn(worktrees: readonly string[]): LocatedPark[] {
+	return [...new Set(worktrees)]
+		.flatMap((cwd) => openParks(cwd).map((p) => ({ ...p, cwd })))
+		.sort((a, b) => a.askedAt.localeCompare(b.askedAt));
+}
+
+/** Every worktree whose run state resolves `ref` (a run id or a runner name). */
+export function locateRun(worktrees: readonly string[], ref: string): { cwd: string; runId: string }[] {
+	return [...new Set(worktrees)].flatMap((cwd) => {
+		const runId = resolveRunId(cwd, ref);
+		return runId ? [{ cwd, runId }] : [];
+	});
+}
 /** The oldest answered park for this run and stable stage identity. Prompt text is not an identity. */
 export function answeredParkFor(cwd: string, runId: string, stage: string): Park | undefined {
 	const next = readParks(cwd, runId)

@@ -18,7 +18,8 @@ import { execFile, spawn as nodeSpawn } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openParks, readParks, resolveRunId, runsDir } from "./park-store.ts";
+import { openParksIn, readParks, resolveRunId, runsDir } from "./park-store.ts";
+import { discoverWorktrees } from "./progress.ts";
 import { resolveRunAlias } from "./run-alias.ts";
 import { stepSkills } from "./steps.ts";
 
@@ -166,9 +167,10 @@ export function createTools(deps: McpDeps) {
 
 		async inbox(o: { cwd?: string }) {
 			return {
-				waiting: openParks(cwdOf(o)).map(
-					({ runId, n, workflow, stage, questions, status, askedAt, answer, kata }) => ({
+				waiting: openParksIn(discoverWorktrees(cwdOf(o))).map(
+					({ runId, n, workflow, stage, questions, status, askedAt, answer, kata, cwd }) => ({
 						runId,
+						cwd,
 						n,
 						workflow,
 						stage,

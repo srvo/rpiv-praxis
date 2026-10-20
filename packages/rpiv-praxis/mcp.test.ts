@@ -103,7 +103,9 @@ describe("inbox, answer, listings", () => {
 	it("inbox returns open parks; answer resumes detached or records only", async () => {
 		const { cwd, spawned, deps, tools } = setup({ code: 0, stdout: "answered r1 #1: Blue\n", stderr: "" });
 		addPark(cwd, { runId: "r1", workflow: "wf", stage: "pick", prompt: "p", sessionId: "s", questions: [] });
-		expect((await tools.inbox({})).waiting).toMatchObject([{ runId: "r1", n: 1, stage: "pick" }]);
+		expect((await tools.inbox({})).waiting).toMatchObject([
+			{ runId: "r1", n: 1, stage: "pick", cwd: expect.any(String) },
+		]);
 
 		expect(await tools.answer({ run: "dm", n: 1, choice: "Blue" })).toMatchObject({ state: "resuming" });
 		expect(spawned[0]!.args.slice(0, 4)).toEqual(["answer", "dm", "1", "Blue"]);

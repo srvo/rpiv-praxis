@@ -339,6 +339,50 @@ describe("rpiv-wf parked questions", () => {
 		expect(b.out.join("\n")).toContain("Red or blue?");
 	});
 
+	it("inbox and answer reach a run parked in a sibling worktree", async () => {
+		const { root, first, second } = repoWithWorktree();
+		mkdirSync(runsDir(second), { recursive: true });
+		writeFileSync(join(runsDir(second), "r1.jsonl"), "{}\n");
+		park(second);
+		const a = io();
+		expect(await main(["inbox", "--cwd", first], a.io)).toBe(EXIT.ok);
+		expect(a.out.join("\n")).toContain("Red or blue?");
+		expect(a.out.join("\n")).toContain(`worktree: ${realpathSync(second)}`);
+		const h = harness();
+		const b = io();
+		const code = await main(["answer", "r1", "1", "Red", "--cwd", first, "--plugin-dir", plugin()], b.io, {
+			api: h.api,
+			deps: { query: vi.fn(), forkSession: vi.fn() } as never,
+			kata: null,
+		});
+		expect(code).toBe(EXIT.ok);
+		expect(b.err.join("\n")).toContain(`found RPIV run r1 in worktree ${realpathSync(second)}`);
+		expect(readParks(second, "r1")[0]).toMatchObject({ status: "answered", answer: "Red" });
+		const [ctx, ref] = vi.mocked(h.api.resumeWorkflowByRunId).mock.calls[0]!;
+		expect(ref).toBe("r1");
+		expect(ctx.cwd).toBe(realpathSync(second));
+		rmSync(root, { recursive: true, force: true });
+	});
+
+	it("answer refuses a run id found in more than one worktree", async () => {
+		const { root, first, second } = repoWithWorktree();
+		const third = join(root, "third");
+		execFileSync("git", ["worktree", "add", "-qb", "third", third], { cwd: first, stdio: "ignore" });
+		for (const wt of [second, third]) {
+			mkdirSync(runsDir(wt), { recursive: true });
+			writeFileSync(join(runsDir(wt), "r1.jsonl"), "{}\n");
+		}
+		const h = harness();
+		const a = io();
+		expect(await main(["answer", "r1", "1", "Red", "--cwd", first], a.io, { api: h.api, kata: null })).toBe(
+			EXIT.usage,
+		);
+		expect(a.err.join(" ")).toContain("more than one worktree");
+		expect(a.err.join(" ")).toContain("pass --cwd");
+		expect(h.api.resumeWorkflowByRunId).not.toHaveBeenCalled();
+		rmSync(root, { recursive: true, force: true });
+	});
+
 	it("answer --no-resume records the choice by number and closes the ticket", async () => {
 		const cwd = project();
 		addPark(cwd, { runId: "r1", prompt: "p", sessionId: "s", questions: [ask], kata: "ab12" } as never);

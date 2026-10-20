@@ -24,15 +24,24 @@
  * A stopped run is resumable like an interrupted one.
  */
 
+import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { RunWorkflowResult, WorkflowHostContext } from "@juicesharp/rpiv-workflow";
 import { type ClaudeHostDeps, ClaudeWorkflowHost } from "./claude-host.ts";
 import { type CliIo, EXIT, reportInvocation } from "./cli-outcome.ts";
 import { detectKata, type Kata, type KataOptions } from "./kata.ts";
-import { formatPark, openParks, readParks, resolveChoice, resolveRunId, updatePark } from "./park-store.ts";
+import {
+	formatPark,
+	locateRun,
+	openParksIn,
+	readParks,
+	resolveChoice,
+	resolveRunId,
+	updatePark,
+} from "./park-store.ts";
 import { createRunParking } from "./parking.ts";
-import { formatProgressMarkdown, type ProgressReport, reportProgress } from "./progress.ts";
+import { discoverWorktrees, formatProgressMarkdown, type ProgressReport, reportProgress } from "./progress.ts";
 import { registerRpivWorkflowSupport } from "./rpiv-support.ts";
 import {
 	generateRunAlias,
@@ -330,9 +339,13 @@ export async function main(
 		return report.kata.available ? EXIT.ok : EXIT.failed;
 	}
 	if (command === "inbox") {
-		const open = openParks(cwd);
+		const here = realpathOr(cwd);
+		const open = openParksIn(discoverWorktrees(cwd));
 		if (open.length === 0) io.out("nothing waiting");
-		for (const p of open) io.out(formatPark(p));
+		for (const p of open) {
+			io.out(formatPark(p));
+			if (p.cwd !== here) io.out(`  worktree: ${p.cwd}`);
+		}
 		return EXIT.ok;
 	}
 
@@ -349,13 +362,25 @@ export async function main(
 	let locatedRunId = command === "resume" || command === "answer" ? resolveRunId(cwd, target!) : undefined;
 	if (!locatedRunId && (command === "resume" || command === "answer")) {
 		const alias = resolveRunAlias(cwd, target!);
+		const siblings = alias ? [] : locateRun(discoverWorktrees(cwd), target!);
 		if (alias) {
 			cwd = alias.cwd;
 			locatedRunId = alias.runId;
 			resumeRef = alias.runId;
 			io.err(`[info] found RPIV run ${alias.name} in originating worktree ${alias.cwd}`);
+		} else if (siblings.length === 1) {
+			const [found] = siblings as [{ cwd: string; runId: string }];
+			cwd = found.cwd;
+			locatedRunId = found.runId;
+			resumeRef = found.runId;
+			io.err(`[info] found RPIV run ${found.runId} in worktree ${found.cwd}`);
+		} else if (siblings.length > 1) {
+			io.err(
+				`RPIV run "${target}" exists in more than one worktree (${siblings.map((s) => s.cwd).join(", ")}); pass --cwd for the one you mean.`,
+			);
+			return EXIT.usage;
 		}
-		if (!alias && hasRunAliasEntry(cwd, target!)) {
+		if (!alias && siblings.length === 0 && hasRunAliasEntry(cwd, target!)) {
 			io.err(
 				`RPIV run alias "${target}" is stale or unreadable; its original worktree/run may have been removed. Run \`rpiv-wf runs\` for available runs.`,
 			);
@@ -557,5 +582,13 @@ export async function main(
 		releaseAlias?.();
 		offExit();
 		if (timer) clearTimeout(timer);
+	}
+}
+
+function realpathOr(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		return resolve(path);
 	}
 }
