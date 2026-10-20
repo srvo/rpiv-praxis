@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { defaultPluginDir, loadSkillCatalog, skillRegistryHost, translateSkillPrompt } from "./skills.js";
+import { defaultPluginDir, loadSkillCatalog, skillRegistryHost, translateSkillPrompt } from "./skills.ts";
 
 const catalog = { plugin: new Set(["plan", "commit"]), local: new Set(["write-note"]) };
 

@@ -5,11 +5,11 @@
  * dynamically imports your definitions so they build on first `/wf`, not startup.
  */
 
-import type { WorkflowExecutionProvider } from "./execution-host.js";
-import { registerWorkflowExecutionHost as registerExecutionHost } from "./execution-host.js";
+import type { WorkflowExecutionProvider } from "./execution-host.ts";
+import { registerWorkflowExecutionHost as registerExecutionHost } from "./execution-host.ts";
 
-export { registerBuiltIns, registerBuiltInsProvider } from "./built-ins.js";
-export { registerLifecycle } from "./events.js";
+export { registerBuiltIns, registerBuiltInsProvider } from "./built-ins.ts";
+export { registerLifecycle } from "./events.ts";
 
 export function registerWorkflowExecutionHost(provider: WorkflowExecutionProvider): () => void {
 	return registerExecutionHost(provider);
@@ -21,5 +21,5 @@ export {
 	registerOutcomeDeriver,
 	registerSkillContracts,
 	registerSkillContractsProvider,
-} from "./skill-contracts/index.js";
-export { summarizeRun } from "./state/index.js";
+} from "./skill-contracts/index.ts";
+export { summarizeRun } from "./state/index.ts";

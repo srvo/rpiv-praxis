@@ -10,16 +10,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, defineRoute, produces, type VerifySpec, type Workflow } from "./api.js";
-import { fs as fsHandle } from "./handle.js";
-import { judge } from "./judge.js";
-import { verify } from "./loop-constructors.js";
-import type { Output } from "./output.js";
-import type { Outcome } from "./output-spec.js";
-import { runWorkflow } from "./runner/index.js";
-import { baseStageModel, escalatedModel, singleStageModel } from "./stage-models.js";
-import { stateFilePath } from "./state/paths.js";
-import { validateWorkflow } from "./validate-workflow.js";
+import { acts, defineRoute, produces, type VerifySpec, type Workflow } from "./api.ts";
+import { fs as fsHandle } from "./handle.ts";
+import { judge } from "./judge.ts";
+import { verify } from "./loop-constructors.ts";
+import type { Output } from "./output.ts";
+import type { Outcome } from "./output-spec.ts";
+import { runWorkflow } from "./runner/index.ts";
+import { baseStageModel, escalatedModel, singleStageModel } from "./stage-models.ts";
+import { stateFilePath } from "./state/paths.ts";
+import { validateWorkflow } from "./validate-workflow.ts";
 
 const LADDER = ["haiku", "sonnet", "opus"] as const;
 const wf = (models?: Workflow["models"]): Workflow =>

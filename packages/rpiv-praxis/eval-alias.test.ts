@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { newTrialAttempt, trialRunAlias } from "./eval.js";
-import { registerRunAlias, reserveRunAlias } from "./run-alias.js";
+import { newTrialAttempt, trialRunAlias } from "./eval.ts";
+import { registerRunAlias, reserveRunAlias } from "./run-alias.ts";
 
 const roots: string[] = [];
 afterEach(() => {

@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunWorkflowResult } from "@juicesharp/rpiv-workflow";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type CliIo, EXIT, reportInvocation } from "./cli-outcome.js";
-import type { Park } from "./park-store.js";
-import type { RunLedger } from "./run-ledger.js";
-import { emptyTotals } from "./usage.js";
+import { type CliIo, EXIT, reportInvocation } from "./cli-outcome.ts";
+import type { Park } from "./park-store.ts";
+import type { RunLedger } from "./run-ledger.ts";
+import { emptyTotals } from "./usage.ts";
 
 let dir: string;
 beforeEach(() => {

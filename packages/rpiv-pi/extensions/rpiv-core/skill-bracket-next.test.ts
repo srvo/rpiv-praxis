@@ -2,9 +2,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { restoreNextAttempt } from "./next-authorization.js";
-import { registerSessionCapture } from "./session-capture.js";
-import { __resetSkillBracketState, registerSkillBracket } from "./skill-bracket.js";
+import { restoreNextAttempt } from "./next-authorization.ts";
+import { registerSessionCapture } from "./session-capture.ts";
+import { __resetSkillBracketState, registerSkillBracket } from "./skill-bracket.ts";
 
 const BASELINE_MODEL = { provider: "anthropic", id: "baseline" };
 

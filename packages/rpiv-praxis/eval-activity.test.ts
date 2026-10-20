@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { TrialResult } from "./eval.js";
-import { memorySink, trialActivity } from "./eval-activity.js";
-import { emptyTotals } from "./usage.js";
+import type { TrialResult } from "./eval.ts";
+import { memorySink, trialActivity } from "./eval-activity.ts";
+import { emptyTotals } from "./usage.ts";
 
 const trial = (over: Partial<TrialResult> = {}): TrialResult => ({
 	variant: "base",

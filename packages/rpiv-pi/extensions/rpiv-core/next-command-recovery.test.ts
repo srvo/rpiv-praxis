@@ -1,13 +1,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExtensionCommandContext, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import { parseCommandArgs } from "../../../rpiv-args/args.js";
+import { parseCommandArgs } from "../../../rpiv-args/args.ts";
 import {
 	authorizeNextInput,
 	NEXT_AUTHORIZATION_ENTRY,
 	NEXT_RECEIPT_ENTRY,
 	type NextAuthorization,
-} from "./next-authorization.js";
+} from "./next-authorization.ts";
 import {
 	NEXT_APPROVAL_MARKER,
 	NEXT_ATTEMPT_ENTRY,
@@ -15,7 +15,7 @@ import {
 	NEXT_HANDOFF_MESSAGE,
 	type NextPreflightFacts,
 	registerNextCommand,
-} from "./next-command.js";
+} from "./next-command.ts";
 
 type Entry = {
 	type: string;

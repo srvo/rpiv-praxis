@@ -24,7 +24,7 @@ import type {
 	WorkflowHostContext,
 	WorkflowSessionContext,
 } from "@juicesharp/rpiv-workflow";
-import { type SkillCatalog, translateSkillPrompt } from "./skills.js";
+import { type SkillCatalog, translateSkillPrompt } from "./skills.ts";
 import {
 	assistantEntry,
 	assistantTextSince,
@@ -33,7 +33,7 @@ import {
 	stampStop,
 	stopReasonForResult,
 	userEntry,
-} from "./transcript.js";
+} from "./transcript.ts";
 
 type Options = NonNullable<Parameters<typeof sdkQuery>[0]["options"]>;
 type PermissionMode = NonNullable<Options["permissionMode"]>;

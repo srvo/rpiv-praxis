@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import registerRpivCore from "./index.js";
+import registerRpivCore from "./index.ts";
 
 describe("/next core registration", () => {
 	it("registers the command after the session capture and skill bracket hooks", () => {

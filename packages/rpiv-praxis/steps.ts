@@ -21,8 +21,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "yaml";
-import { rpivPiRoot, skillFiles } from "./rpiv-support.js";
-import { claudeConfigDir } from "./transcript.js";
+import { rpivPiRoot, skillFiles } from "./rpiv-support.ts";
+import { claudeConfigDir } from "./transcript.ts";
 
 export const STEP_PREFIX = "step-";
 export const stepWorkflowName = (skill: string): string => `${STEP_PREFIX}${skill}`;

@@ -8,8 +8,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { appendHeader, appendStage, readAllStages, readAllStagesForResume, STATE_SCHEMA_VERSION } from "./index.js";
-import { appendLoopCap } from "./writes.js";
+import { appendHeader, appendStage, readAllStages, readAllStagesForResume, STATE_SCHEMA_VERSION } from "./index.ts";
+import { appendLoopCap } from "./writes.ts";
 
 let cwd: string;
 beforeEach(() => {

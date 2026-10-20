@@ -47,10 +47,10 @@ import {
 	setRouteNote,
 	type Workflow,
 } from "@juicesharp/rpiv-workflow/registration";
-import { rpivBucketOutcome } from "../artifact-collector.js";
-import { BASELINE_COMMIT_OUTCOME, commitPrompt, latestFsArtifact } from "../built-ins/index.js";
-import { lessonsBlock, recordLessons } from "./lessons.js";
-import { captureGoalKeepingWip, wipIntact, wipNotice } from "./wip-guard.js";
+import { rpivBucketOutcome } from "../artifact-collector.ts";
+import { BASELINE_COMMIT_OUTCOME, commitPrompt, latestFsArtifact } from "../built-ins/index.ts";
+import { lessonsBlock, recordLessons } from "./lessons.ts";
+import { captureGoalKeepingWip, wipIntact, wipNotice } from "./wip-guard.ts";
 
 // ---------------------------------------------------------------------------
 // Public vocabulary

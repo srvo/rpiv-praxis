@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runsDir } from "../state/paths.js";
-import { acquireResumeLock } from "./resume-lock.js";
-import { withRunLease } from "./run-lease.js";
+import { runsDir } from "../state/paths.ts";
+import { acquireResumeLock } from "./resume-lock.ts";
+import { withRunLease } from "./run-lease.ts";
 
 let cwd: string | undefined;
 afterEach(() => {

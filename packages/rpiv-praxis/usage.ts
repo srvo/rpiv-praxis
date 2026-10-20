@@ -4,7 +4,7 @@
  * (or anything else) can compare runs without parsing logs.
  */
 
-import type { TurnUsage } from "./claude-host.js";
+import type { TurnUsage } from "./claude-host.ts";
 
 export interface UsageTotals {
 	costUsd: number;

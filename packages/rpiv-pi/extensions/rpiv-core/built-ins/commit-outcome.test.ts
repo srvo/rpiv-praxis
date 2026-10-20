@@ -14,8 +14,8 @@ import { join } from "node:path";
 import type { RunView } from "@juicesharp/rpiv-workflow";
 import { type BranchEntry, fs as fsHandle } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findWorkflow } from "../workflow-test-harness.js";
-import { BASELINE_COMMIT_OUTCOME, notCommittedReason, REVIEWED_COMMIT_OUTCOME } from "./commit-outcome.js";
+import { findWorkflow } from "../workflow-test-harness.ts";
+import { BASELINE_COMMIT_OUTCOME, notCommittedReason, REVIEWED_COMMIT_OUTCOME } from "./commit-outcome.ts";
 
 const hasGit = (() => {
 	try {

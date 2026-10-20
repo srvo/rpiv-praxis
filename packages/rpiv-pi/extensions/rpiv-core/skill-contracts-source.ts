@@ -15,11 +15,11 @@ import { realpathSync } from "node:fs";
 import { isAbsolute, relative, sep } from "node:path";
 import { getAgentDir, loadSkills, loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
 import type { SkillContract } from "@juicesharp/rpiv-workflow/registration";
-import { BUNDLED_SKILLS_DIR } from "./paths.js";
-import { artifactKindComparator, contractEntriesFrom } from "./skill-contracts-core.js";
-import { isModuleNotFound } from "./utils.js";
+import { BUNDLED_SKILLS_DIR } from "./paths.ts";
+import { artifactKindComparator, contractEntriesFrom } from "./skill-contracts-core.ts";
+import { isModuleNotFound } from "./utils.ts";
 
-export { artifactKindComparator, normalizeContract } from "./skill-contracts-core.js";
+export { artifactKindComparator, normalizeContract } from "./skill-contracts-core.ts";
 
 /**
  * Scan rpiv-pi's bundled skills dir for `contract:` frontmatter blocks.
@@ -129,7 +129,7 @@ export async function registerSkillContractsSource(): Promise<void> {
 		// edge off the entry path: it only resolves after the `/startup` import above
 		// already succeeded, and a missing/non-resolvable sibling degrades to the
 		// isModuleNotFound no-op below instead of crashing the extension.
-		const { registerOutcomeDerivation } = await import("./outcome-derivation.js");
+		const { registerOutcomeDerivation } = await import("./outcome-derivation.ts");
 		await registerOutcomeDerivation();
 	} catch (err) {
 		if (isModuleNotFound(err)) return; // sibling absent — /rpiv-setup prompts the user

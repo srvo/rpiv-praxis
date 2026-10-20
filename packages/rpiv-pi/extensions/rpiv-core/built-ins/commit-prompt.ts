@@ -6,8 +6,8 @@
  */
 
 import { handleToString, type PromptFn, type RunView } from "@juicesharp/rpiv-workflow/registration";
-import { goalBaselinePath } from "./goal-baseline.js";
-import { latestFsArtifact } from "./shared.js";
+import { goalBaselinePath } from "./goal-baseline.ts";
+import { latestFsArtifact } from "./shared.ts";
 
 /**
  * The commit skill's "this change already cleared the run's review gate" flag.

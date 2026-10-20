@@ -3,9 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createTools, type McpDeps } from "./mcp.js";
-import { runsDir } from "./park-store.js";
-import { registerRunAlias } from "./run-alias.js";
+import { createTools, type McpDeps } from "./mcp.ts";
+import { runsDir } from "./park-store.ts";
+import { registerRunAlias } from "./run-alias.ts";
 
 const roots: string[] = [];
 afterEach(() => {

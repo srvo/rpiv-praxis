@@ -1,9 +1,9 @@
 import type { ExtensionAPI, ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { createMockPi, createMockUI } from "@juicesharp/rpiv-test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { showLaneConsole } from "./lane-console.js";
-import { __resetLaneSwitcher, registerLaneSwitcher } from "./lane-switcher.js";
-import { __resetRunLaneRegistry, recordRun } from "./run-lane-registry.js";
+import { showLaneConsole } from "./lane-console.ts";
+import { __resetLaneSwitcher, registerLaneSwitcher } from "./lane-switcher.ts";
+import { __resetRunLaneRegistry, recordRun } from "./run-lane-registry.ts";
 
 // The `r` rerun is the lane console's onRerun: capture it from the console call and
 // drive the real session-start closure. Only the console and the runner are mocked.

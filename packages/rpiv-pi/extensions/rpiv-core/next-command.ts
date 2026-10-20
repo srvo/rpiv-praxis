@@ -11,9 +11,9 @@ import {
 	type NextAuthorization,
 	registerNextTargetCommands,
 	restoreNextAttempt,
-} from "./next-authorization.js";
-import { RPIV_STAGE_NAMES } from "./pipeline-pointer.js";
-import { listLanes } from "./run-lane-registry.js";
+} from "./next-authorization.ts";
+import { RPIV_STAGE_NAMES } from "./pipeline-pointer.ts";
+import { listLanes } from "./run-lane-registry.ts";
 export const NEXT_APPROVAL_MARKER = "Reply /next to run only the step above in a fresh session.";
 
 export interface NextHandoff {

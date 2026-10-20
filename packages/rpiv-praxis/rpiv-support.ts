@@ -14,7 +14,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "yaml";
-import { claudeConfigDir } from "./transcript.js";
+import { claudeConfigDir } from "./transcript.ts";
 
 /** rpiv-pi's package root, resolved through the workspace dependency. */
 export function rpivPiRoot(): string {

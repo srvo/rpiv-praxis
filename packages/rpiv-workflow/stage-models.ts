@@ -4,10 +4,10 @@
  * the host applies the resulting `ModelSelection` at child creation.
  */
 
-import type { ModelSelection } from "./host.js";
-import { nowIso } from "./internal-utils.js";
-import type { Workflow } from "./stage-def.js";
-import { appendModelEscalation, readAllStages } from "./state/index.js";
+import type { ModelSelection } from "./host.ts";
+import { nowIso } from "./internal-utils.ts";
+import type { Workflow } from "./stage-def.ts";
+import { appendModelEscalation, readAllStages } from "./state/index.ts";
 
 type ModelRun = { cwd: string; runId: string; workflow: Workflow; resolveModel?: ResolveModel };
 type ResolveModel = (id: { workflow: string; stage: string; skill: string }) => ModelSelection | undefined;

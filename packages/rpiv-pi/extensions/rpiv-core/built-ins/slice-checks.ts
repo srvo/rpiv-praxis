@@ -6,10 +6,10 @@
 import { writeFileSync } from "node:fs";
 import { basename, isAbsolute, join } from "node:path";
 import { handleToString, type Output, type RunView, type ScriptContext } from "@juicesharp/rpiv-workflow/registration";
-import { parseFrontmatter } from "../frontmatter.js";
-import { verifyCitations } from "./citations.js";
-import { latestVerdictPerDimension, type SeedOnlyVerdict, seedOnlyFindings } from "./gates.js";
-import { fencedSpans, forEachLineOutsideFences } from "./markdown-fence.js";
+import { parseFrontmatter } from "../frontmatter.ts";
+import { verifyCitations } from "./citations.ts";
+import { latestVerdictPerDimension, type SeedOnlyVerdict, seedOnlyFindings } from "./gates.ts";
+import { fencedSpans, forEachLineOutsideFences } from "./markdown-fence.ts";
 import {
 	haltPreflight,
 	latestFsArtifact,
@@ -17,7 +17,7 @@ import {
 	readArtifactFile,
 	type StructureFinding,
 	writeStructureVerdict,
-} from "./shared.js";
+} from "./shared.ts";
 import {
 	clusterSliceDag,
 	DESIGN_SLICE_RE,
@@ -26,7 +26,7 @@ import {
 	sliceCovers,
 	sliceDepCycle,
 	sliceRecords,
-} from "./slices.js";
+} from "./slices.ts";
 
 /** A dispatched sub-plan basename with its `_cluster-<k>` ordinal resolved. */
 type DispatchedCluster = { path: string; k: number };

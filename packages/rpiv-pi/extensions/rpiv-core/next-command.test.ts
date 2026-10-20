@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { registerNextRestorer } from "./next-authorization.js";
+import { registerNextRestorer } from "./next-authorization.ts";
 import {
 	registerNextCommand,
 	selectNextHandoff,
 	validateNextHandoffArguments,
 	validateNextPreflight,
-} from "./next-command.js";
-import { RPIV_STAGE_NAMES } from "./pipeline-pointer.js";
+} from "./next-command.ts";
+import { RPIV_STAGE_NAMES } from "./pipeline-pointer.ts";
 
 const footer = (
 	overrides: Partial<Record<"command" | "workdir" | "artifact" | "branch" | "issue" | "marker", string>> = {},

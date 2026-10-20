@@ -14,7 +14,7 @@ import { join } from "node:path";
 import type { RunView } from "@juicesharp/rpiv-workflow";
 import { fs as fsHandle } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findWorkflow } from "../workflow-test-harness.js";
+import { findWorkflow } from "../workflow-test-harness.ts";
 
 type StageRun = (ctx: { cwd: string; input?: undefined; state: RunView }) => { data: Record<string, unknown> };
 

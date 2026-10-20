@@ -13,10 +13,10 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { configPath } from "@juicesharp/rpiv-config";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { registerArgsHandler } from "../../../rpiv-args/args.js";
-import { NEXT_AUTHORIZATION_ENTRY, NEXT_RECEIPT_ENTRY, type NextAuthorization } from "./next-authorization.js";
-import { registerSessionCapture } from "./session-capture.js";
-import { registerSkillBracket } from "./skill-bracket.js";
+import { registerArgsHandler } from "../../../rpiv-args/args.ts";
+import { NEXT_AUTHORIZATION_ENTRY, NEXT_RECEIPT_ENTRY, type NextAuthorization } from "./next-authorization.ts";
+import { registerSessionCapture } from "./session-capture.ts";
+import { registerSkillBracket } from "./skill-bracket.ts";
 
 const runFile = promisify(execFile);
 const BASELINE = { provider: "anthropic", id: "baseline" };

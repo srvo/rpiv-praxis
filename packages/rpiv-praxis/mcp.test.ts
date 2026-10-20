@@ -6,8 +6,8 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { autoName, createTools, type McpDeps, registerTools } from "./mcp.js";
-import { addPark, runsDir } from "./park-store.js";
+import { autoName, createTools, type McpDeps, registerTools } from "./mcp.ts";
+import { addPark, runsDir } from "./park-store.ts";
 
 function setup(execOut = { code: 0, stdout: "build\tthe big one\nvet\n", stderr: "" }) {
 	const cwd = mkdtempSync(join(tmpdir(), "rpiv-mcp-"));

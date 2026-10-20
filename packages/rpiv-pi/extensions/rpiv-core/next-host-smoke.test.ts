@@ -10,7 +10,7 @@ import {
 	createNativeSmokeFixture,
 	OLD_TRANSCRIPT,
 	PROVIDER,
-} from "./built-ins/__fixtures__/next-host-smoke-fixture.js";
+} from "./built-ins/__fixtures__/next-host-smoke-fixture.ts";
 
 describe("/next native host smoke (P3.2, rpiv-praxis#y9nt)", () => {
 	let fixture: Awaited<ReturnType<typeof createNativeSmokeFixture>> | undefined;

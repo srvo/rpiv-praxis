@@ -11,7 +11,7 @@ import {
 	PARKED_MESSAGE,
 	type Parking,
 	recommendedAnswers,
-} from "./claude-host.js";
+} from "./claude-host.ts";
 
 type Call = { prompt: string; options: Record<string, any> };
 

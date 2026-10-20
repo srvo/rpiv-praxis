@@ -9,8 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fs as fsHandle, type RunView } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { VERDICT_DIR } from "./shared.js";
-import { type VerdictSnapshot, verdictCollector } from "./verdict-collector.js";
+import { VERDICT_DIR } from "./shared.ts";
+import { type VerdictSnapshot, verdictCollector } from "./verdict-collector.ts";
 
 const DIR = VERDICT_DIR;
 const PLAN_BASE = "2026-01-01_00-00-00_demo-plan";

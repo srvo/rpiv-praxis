@@ -20,11 +20,11 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, KeyId, TUI } from "@earendil-works/pi-tui";
 import type { WorkflowHostContext } from "@juicesharp/rpiv-workflow";
-import { showLaneConsole } from "./lane-console.js";
-import { LaneDock } from "./lane-dock.js";
-import { LaneDockEditor } from "./lane-dock-editor.js";
-import { isLaneRelayUiContext } from "./lane-relay-ui.js";
-import { rerunRefusal } from "./rerun-notice.js";
+import { showLaneConsole } from "./lane-console.ts";
+import { LaneDock } from "./lane-dock.ts";
+import { LaneDockEditor } from "./lane-dock-editor.ts";
+import { isLaneRelayUiContext } from "./lane-relay-ui.ts";
+import { rerunRefusal } from "./rerun-notice.ts";
 import {
 	getFocusedRun,
 	laneCount,
@@ -32,8 +32,8 @@ import {
 	SINGLE_UNIT_KEY,
 	setFocusedRun,
 	subscribeLanes,
-} from "./run-lane-registry.js";
-import { isModuleNotFound } from "./utils.js";
+} from "./run-lane-registry.ts";
+import { isModuleNotFound } from "./utils.ts";
 
 /**
  * Root hotkey that opens the lane switcher, registered via Pi's `registerShortcut`

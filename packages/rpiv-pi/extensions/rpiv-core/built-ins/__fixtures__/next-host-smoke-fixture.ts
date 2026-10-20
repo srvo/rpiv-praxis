@@ -18,12 +18,12 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { parseCommandArgs, registerArgsHandler } from "../../../../../rpiv-args/args.js";
-import { LOADED_MARKER } from "../../../../../rpiv-args/index.js";
-import { invalidateModelsConfigCache } from "../../models-config.js";
-import { NEXT_APPROVAL_MARKER, type NextPreflightFacts, registerNextCommand } from "../../next-command.js";
-import { registerSessionCapture } from "../../session-capture.js";
-import { registerSkillBracket } from "../../skill-bracket.js";
+import { parseCommandArgs, registerArgsHandler } from "../../../../../rpiv-args/args.ts";
+import { LOADED_MARKER } from "../../../../../rpiv-args/index.ts";
+import { invalidateModelsConfigCache } from "../../models-config.ts";
+import { NEXT_APPROVAL_MARKER, type NextPreflightFacts, registerNextCommand } from "../../next-command.ts";
+import { registerSessionCapture } from "../../session-capture.ts";
+import { registerSkillBracket } from "../../skill-bracket.ts";
 
 export const PROVIDER = "rpiv-native-smoke";
 export const OLD_TRANSCRIPT = "OLD_TRANSCRIPT_SENTINEL_NOT_FOR_TARGET";

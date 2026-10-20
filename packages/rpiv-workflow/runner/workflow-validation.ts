@@ -1,5 +1,5 @@
-import type { Workflow } from "../api.js";
-import { validateWorkflow } from "../validate-workflow.js";
+import type { Workflow } from "../api.ts";
+import { validateWorkflow } from "../validate-workflow.ts";
 
 /** Return a concise error for the exact workflow object about to be executed. */
 export function workflowValidationError(workflow: Workflow): string | undefined {

@@ -31,7 +31,7 @@ import {
 	type Outcome,
 	type RunView,
 } from "@juicesharp/rpiv-workflow/registration";
-import { gitDirtyEntries, goalBaselinePath, readGoalBaseline, SCOPE_BOOKKEEPING_DIRS } from "./goal-baseline.js";
+import { gitDirtyEntries, goalBaselinePath, readGoalBaseline, SCOPE_BOOKKEEPING_DIRS } from "./goal-baseline.ts";
 
 /** How many uncommitted paths the failure message names before eliding. */
 const MAX_LISTED_PATHS = 10;

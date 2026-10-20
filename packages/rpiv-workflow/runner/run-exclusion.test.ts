@@ -5,11 +5,11 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createMockSessionChain } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, type Workflow } from "../api.js";
-import { registerWorkflowExecutionHost } from "../execution-host.js";
-import { readAllStages, readHeader } from "../state/index.js";
-import { acquireResumeLock } from "./resume-lock.js";
-import { resumeWorkflow, runWorkflow } from "./runner.js";
+import { acts, type Workflow } from "../api.ts";
+import { registerWorkflowExecutionHost } from "../execution-host.ts";
+import { readAllStages, readHeader } from "../state/index.ts";
+import { acquireResumeLock } from "./resume-lock.ts";
+import { resumeWorkflow, runWorkflow } from "./runner.ts";
 
 let cwd: string;
 beforeEach(() => {

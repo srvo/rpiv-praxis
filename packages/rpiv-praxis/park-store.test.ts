@@ -14,7 +14,7 @@ import {
 	resolveRunId,
 	runsDir,
 	updatePark,
-} from "./park-store.js";
+} from "./park-store.ts";
 
 const project = () => {
 	const cwd = mkdtempSync(join(tmpdir(), "rpiv-park-"));

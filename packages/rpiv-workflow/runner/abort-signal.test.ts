@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { combineAbortSignals } from "./abort-signal.js";
+import { combineAbortSignals } from "./abort-signal.ts";
 
 describe("combineAbortSignals", () => {
 	it("combines caller and execution-host cancellation", () => {

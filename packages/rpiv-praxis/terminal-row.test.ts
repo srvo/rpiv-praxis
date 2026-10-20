@@ -12,9 +12,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunWorkflowResult } from "@juicesharp/rpiv-workflow";
 import { describe, expect, it, vi } from "vitest";
-import type { ClaudeHostDeps, TurnUsage } from "./claude-host.js";
-import { EXIT, handleStopSignals, main, type WorkflowApi } from "./cli.js";
-import { RunLedger, readLedger } from "./run-ledger.js";
+import type { ClaudeHostDeps, TurnUsage } from "./claude-host.ts";
+import { EXIT, handleStopSignals, main, type WorkflowApi } from "./cli.ts";
+import { RunLedger, readLedger } from "./run-ledger.ts";
 
 const turn = (costUsd: number, input = 100, output = 0): TurnUsage => ({
 	costUsd,

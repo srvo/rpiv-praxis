@@ -28,7 +28,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LifecycleListeners } from "@juicesharp/rpiv-workflow";
-import type { TurnUsage } from "./claude-host.js";
+import type { TurnUsage } from "./claude-host.ts";
 
 export interface UsageRow {
 	type: "usage";

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { sessionUsageOf, turnUsage } from "./claude-host.js";
+import { sessionUsageOf, turnUsage } from "./claude-host.ts";
 import {
 	type EvalDeps,
 	type EvalSpec,
@@ -14,8 +14,8 @@ import {
 	summarize,
 	type TrialResult,
 	variantFlags,
-} from "./eval.js";
-import { emptyTotals, listFlag, mergeTotals } from "./usage.js";
+} from "./eval.ts";
+import { emptyTotals, listFlag, mergeTotals } from "./usage.ts";
 
 describe("per-turn usage from cumulative SDK results", () => {
 	const result = (cost: number, out: number) => ({

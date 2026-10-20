@@ -5,9 +5,9 @@
  */
 import { basename } from "node:path";
 import { fanout, handleToString, type RunView } from "@juicesharp/rpiv-workflow/registration";
-import { parseFrontmatter } from "../frontmatter.js";
-import { countHeadingsOutsideFences } from "./markdown-fence.js";
-import { haltPreflight, latestFsArtifact, MAX_PHASES, type PhaseRecord, readArtifactFile } from "./shared.js";
+import { parseFrontmatter } from "../frontmatter.ts";
+import { countHeadingsOutsideFences } from "./markdown-fence.ts";
+import { haltPreflight, latestFsArtifact, MAX_PHASES, type PhaseRecord, readArtifactFile } from "./shared.ts";
 
 /** `## Slice N:` headings — the source of truth a slice map's `slices:` array is derived from. */
 const SLICE_HEADING_RE = /^## Slice (\d+):/gm;

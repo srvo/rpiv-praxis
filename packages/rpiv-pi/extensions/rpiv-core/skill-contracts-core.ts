@@ -12,7 +12,7 @@ import type {
 	SchemaCompatResult,
 	SkillContract,
 } from "@juicesharp/rpiv-workflow/registration";
-import { parseFrontmatter } from "./frontmatter.js";
+import { parseFrontmatter } from "./frontmatter.ts";
 
 const JSON_SCHEMA_ROOT_KEYWORDS = new Set([
 	"type",

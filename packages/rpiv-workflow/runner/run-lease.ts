@@ -1,5 +1,5 @@
-import type { RunWorkflowResult } from "../types.js";
-import { acquireResumeLock, ResumeAlreadyRunningError } from "./resume-lock.js";
+import type { RunWorkflowResult } from "../types.ts";
+import { acquireResumeLock, ResumeAlreadyRunningError } from "./resume-lock.ts";
 
 /** All writers, fresh or resumed, hold one lease through execution and disposal. */
 export async function withRunLease(

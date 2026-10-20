@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { generateRunAlias, hasRunAliasEntry, listRunAliases, registerRunAlias, resolveRunAlias } from "./run-alias.js";
+import { generateRunAlias, hasRunAliasEntry, listRunAliases, registerRunAlias, resolveRunAlias } from "./run-alias.ts";
 
 const roots: string[] = [];
 afterEach(() => {

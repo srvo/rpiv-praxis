@@ -13,9 +13,9 @@ import {
 	type ParseContext,
 	type RunView,
 } from "@juicesharp/rpiv-workflow/registration";
-import { frontmatterParser, rpivBucketOutcome } from "../artifact-collector.js";
-import { countHeadingsOutsideFences, forEachLineOutsideFences, openFenceLine } from "./markdown-fence.js";
-import { PLAN_PHASE_RE } from "./plan-phases.js";
+import { frontmatterParser, rpivBucketOutcome } from "../artifact-collector.ts";
+import { countHeadingsOutsideFences, forEachLineOutsideFences, openFenceLine } from "./markdown-fence.ts";
+import { PLAN_PHASE_RE } from "./plan-phases.ts";
 
 interface ElaborationStructure {
 	/** `"balanced"`, or the diagnosis the contract's enum failure surfaces verbatim. */

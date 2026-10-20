@@ -8,9 +8,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunWorkflowResult } from "@juicesharp/rpiv-workflow";
 import { describe, expect, it, vi } from "vitest";
-import type { TurnUsage } from "./claude-host.js";
-import { EXIT, main, type WorkflowApi } from "./cli.js";
-import { RunLedger, readLedger, usageRow } from "./run-ledger.js";
+import type { TurnUsage } from "./claude-host.ts";
+import { EXIT, main, type WorkflowApi } from "./cli.ts";
+import { RunLedger, readLedger, usageRow } from "./run-ledger.ts";
 
 const turn = (costUsd: number, input = 100, output = 50): TurnUsage => ({
 	costUsd,

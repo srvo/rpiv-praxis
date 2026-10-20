@@ -8,8 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, type Workflow } from "./api.js";
-import { runWorkflow } from "./runner/index.js";
+import { acts, type Workflow } from "./api.ts";
+import { runWorkflow } from "./runner/index.ts";
 
 let tmpDir: string;
 beforeEach(() => {

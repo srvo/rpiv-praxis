@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunWorkflowResult } from "@juicesharp/rpiv-workflow";
 import { describe, expect, it, vi } from "vitest";
-import type { ClaudeHostDeps } from "./claude-host.js";
-import { EXIT, main, type WorkflowApi } from "./cli.js";
-import type { Kata } from "./kata.js";
-import { addPark, readParks, runsDir, updatePark } from "./park-store.js";
-import type { ProgressReport } from "./progress.js";
+import type { ClaudeHostDeps } from "./claude-host.ts";
+import { EXIT, main, type WorkflowApi } from "./cli.ts";
+import type { Kata } from "./kata.ts";
+import { addPark, readParks, runsDir, updatePark } from "./park-store.ts";
+import type { ProgressReport } from "./progress.ts";
 
-import { registerRunAlias, resolveRunAlias } from "./run-alias.js";
+import { registerRunAlias, resolveRunAlias } from "./run-alias.ts";
 
 function plugin(): string {
 	const dir = mkdtempSync(join(tmpdir(), "rpiv-cli-plugin-"));

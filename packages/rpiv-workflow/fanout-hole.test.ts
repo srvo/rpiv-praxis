@@ -10,12 +10,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { acts, fanin, produces, type Workflow } from "./api.js";
-import { fs as fsHandle } from "./handle.js";
-import { fanout } from "./loop-constructors.js";
-import type { Output } from "./output.js";
-import type { Outcome } from "./output-spec.js";
-import { resumeWorkflow, runWorkflow } from "./runner/index.js";
+import { acts, fanin, produces, type Workflow } from "./api.ts";
+import { fs as fsHandle } from "./handle.ts";
+import { fanout } from "./loop-constructors.ts";
+import type { Output } from "./output.ts";
+import type { Outcome } from "./output-spec.ts";
+import { resumeWorkflow, runWorkflow } from "./runner/index.ts";
 import {
 	appendHeader,
 	appendStage,
@@ -23,7 +23,7 @@ import {
 	STATE_SCHEMA_VERSION,
 	type WorkflowHeader,
 	type WorkflowStage,
-} from "./state/index.js";
+} from "./state/index.ts";
 
 const MD = /\.rpiv\/artifacts\/[\w.-]+\/[\w.-]+\.md/g;
 const outcome: Outcome = {

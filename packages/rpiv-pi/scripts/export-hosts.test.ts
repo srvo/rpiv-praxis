@@ -14,7 +14,7 @@ import {
 	transformAgent,
 	transformBody,
 	transformSkill,
-} from "./export-hosts.js";
+} from "./export-hosts.ts";
 
 const catalog: Catalog = { skills: new Set(["plan", "commit"]), agents: new Set(["codebase-locator"]) };
 

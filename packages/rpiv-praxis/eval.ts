@@ -39,10 +39,10 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { type ActivitySink, memorySink, trialActivity } from "./eval-activity.js";
-import { checkContinuable, codeFingerprint, recordedProvenance, writeProvenance } from "./eval-provenance.js";
-import { CLI_BIN, EXIT_STATE } from "./mcp.js";
-import { emptyTotals, mergeTotals, type UsageTotals } from "./usage.js";
+import { type ActivitySink, memorySink, trialActivity } from "./eval-activity.ts";
+import { checkContinuable, codeFingerprint, recordedProvenance, writeProvenance } from "./eval-provenance.ts";
+import { CLI_BIN, EXIT_STATE } from "./mcp.ts";
+import { emptyTotals, mergeTotals, type UsageTotals } from "./usage.ts";
 
 export interface Variant {
 	name: string;

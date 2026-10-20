@@ -11,8 +11,8 @@ import {
 	parkKey,
 	refFrom,
 	ticketBody,
-} from "./kata.js";
-import type { Park } from "./park-store.js";
+} from "./kata.ts";
+import type { Park } from "./park-store.ts";
 
 const park: Park = {
 	n: 1,

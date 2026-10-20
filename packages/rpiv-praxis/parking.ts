@@ -7,10 +7,10 @@
  */
 
 import type { LifecycleListeners } from "@juicesharp/rpiv-workflow";
-import type { Parking } from "./claude-host.js";
-import type { Kata } from "./kata.js";
-import { addPark, answeredParkFor, answerMessage, type Park, type ParkedQuestion, updatePark } from "./park-store.js";
-import { appendLedgerRow } from "./run-ledger.js";
+import type { Parking } from "./claude-host.ts";
+import type { Kata } from "./kata.ts";
+import { addPark, answeredParkFor, answerMessage, type Park, type ParkedQuestion, updatePark } from "./park-store.ts";
+import { appendLedgerRow } from "./run-ledger.ts";
 
 export interface RunParking {
 	parking: Parking;

@@ -26,13 +26,13 @@ import {
 	type InputEvent,
 	parseSkillBlock,
 } from "@earendil-works/pi-coding-agent";
-import { loadModelsConfig, type ModelThinkingLevelValue } from "./models-config.js";
+import { loadModelsConfig, type ModelThinkingLevelValue } from "./models-config.ts";
 import {
 	authorizeNextInput,
 	NEXT_RECEIPT_ENTRY,
 	registerNextRestorer,
 	restoreNextAttempt,
-} from "./next-authorization.js";
+} from "./next-authorization.ts";
 import {
 	applyEffectiveModel,
 	applyOrSkipIfStale,
@@ -40,7 +40,7 @@ import {
 	getCapturedModel,
 	resolveModel,
 	restoreBaseline,
-} from "./session-capture.js";
+} from "./session-capture.ts";
 
 const SKILL_PREFIX = "/skill:";
 

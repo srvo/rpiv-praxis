@@ -1,6 +1,6 @@
 import type { RunWorkflowResult } from "@juicesharp/rpiv-workflow";
 import { describe, expect, it } from "vitest";
-import { rerunRefusal } from "./rerun-notice.js";
+import { rerunRefusal } from "./rerun-notice.ts";
 
 const failed = (over: Partial<RunWorkflowResult>): RunWorkflowResult => ({
 	success: false,

@@ -13,8 +13,8 @@ import {
 	REVIEW_PHASE_ITERATE,
 	REVIEWED_COMMIT_OUTCOME,
 	REVIEWED_COMMIT_PROMPT,
-} from "../built-ins/index.js";
-import { codeReviewGate } from "./shared.js";
+} from "../built-ins/index.ts";
+import { codeReviewGate } from "./shared.ts";
 
 /**
  * Hand the single validate session EVERY plan from the latest blueprint pass

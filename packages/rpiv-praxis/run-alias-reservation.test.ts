@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { registerRunAlias, reserveRunAlias, resolveRunAlias } from "./run-alias.js";
+import { registerRunAlias, reserveRunAlias, resolveRunAlias } from "./run-alias.ts";
 
 const roots: string[] = [];
 afterEach(() => {

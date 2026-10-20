@@ -49,7 +49,7 @@ export function toErrorMessage(e: unknown, fallback?: string): string {
 
 // isModuleNotFound lives in module-errors.ts so Pi-free modules (outcome
 // derivation, loaded by the Claude Code runner) can use it without importing Pi.
-export { isModuleNotFound } from "./module-errors.js";
+export { isModuleNotFound } from "./module-errors.ts";
 
 /**
  * True for a stale extension ctx/pi error thrown by pi-core's ExtensionRunner

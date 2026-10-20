@@ -12,15 +12,15 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as first from "./execution-host.js";
+import * as first from "./execution-host.ts";
 import {
 	__resetWorkflowExecutionHost,
 	getWorkflowExecutionProvider,
 	registerWorkflowExecutionHost,
 	type WorkflowExecution,
 	type WorkflowExecutionProvider,
-} from "./execution-host.js";
-import type { WorkflowHostContext } from "./host.js";
+} from "./execution-host.ts";
+import type { WorkflowHostContext } from "./host.ts";
 
 // A minimal provider: createHost echoes the observer back as the executor — the
 // seam never inspects the host, it only stores/returns the provider.
@@ -89,14 +89,14 @@ describe("execution-host seam", () => {
 		const provider = fakeProvider();
 		registerWorkflowExecutionHost(provider);
 		vi.resetModules();
-		const second = await import("./execution-host.js");
+		const second = await import("./execution-host.ts");
 		expect(second).not.toBe(first); // a genuinely separate module instance
 		expect(second.getWorkflowExecutionProvider()).toBe(provider);
 	});
 
 	it("registration through a second instance is visible to the first", async () => {
 		vi.resetModules();
-		const second = await import("./execution-host.js");
+		const second = await import("./execution-host.ts");
 		const provider = fakeProvider();
 		second.registerWorkflowExecutionHost(provider);
 		expect(getWorkflowExecutionProvider()).toBe(provider);

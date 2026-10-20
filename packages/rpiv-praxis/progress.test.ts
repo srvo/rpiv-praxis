@@ -10,7 +10,7 @@ import {
 	type ProgressIssue,
 	readKataIssues,
 	reportProgress,
-} from "./progress.js";
+} from "./progress.ts";
 
 const roots: string[] = [];
 

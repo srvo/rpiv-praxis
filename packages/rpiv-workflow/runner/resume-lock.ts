@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { linkSync, mkdirSync, readFileSync, rmdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { runsDir } from "../state/paths.js";
+import { runsDir } from "../state/paths.ts";
 
 interface Owner {
 	pid: number;

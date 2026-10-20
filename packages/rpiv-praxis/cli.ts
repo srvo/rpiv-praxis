@@ -27,13 +27,13 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { RunWorkflowResult, WorkflowHostContext } from "@juicesharp/rpiv-workflow";
-import { type ClaudeHostDeps, ClaudeWorkflowHost } from "./claude-host.js";
-import { type CliIo, EXIT, reportInvocation } from "./cli-outcome.js";
-import { detectKata, type Kata, type KataOptions } from "./kata.js";
-import { formatPark, openParks, readParks, resolveChoice, resolveRunId, updatePark } from "./park-store.js";
-import { createRunParking } from "./parking.js";
-import { formatProgressMarkdown, type ProgressReport, reportProgress } from "./progress.js";
-import { registerRpivWorkflowSupport } from "./rpiv-support.js";
+import { type ClaudeHostDeps, ClaudeWorkflowHost } from "./claude-host.ts";
+import { type CliIo, EXIT, reportInvocation } from "./cli-outcome.ts";
+import { detectKata, type Kata, type KataOptions } from "./kata.ts";
+import { formatPark, openParks, readParks, resolveChoice, resolveRunId, updatePark } from "./park-store.ts";
+import { createRunParking } from "./parking.ts";
+import { formatProgressMarkdown, type ProgressReport, reportProgress } from "./progress.ts";
+import { registerRpivWorkflowSupport } from "./rpiv-support.ts";
 import {
 	generateRunAlias,
 	hasRunAliasEntry,
@@ -41,13 +41,13 @@ import {
 	registerRunAlias,
 	reserveRunAlias,
 	resolveRunAlias,
-} from "./run-alias.js";
-import { mergeLifecycles, RunLedger } from "./run-ledger.js";
-import { defaultPluginDir, loadSkillCatalog, skillRegistryHost } from "./skills.js";
-import { registerStep, STEP_PREFIX, stepSkill, stepSkills, stepWorkflowName } from "./steps.js";
-import { addTurn, emptyTotals, listFlag } from "./usage.js";
+} from "./run-alias.ts";
+import { mergeLifecycles, RunLedger } from "./run-ledger.ts";
+import { defaultPluginDir, loadSkillCatalog, skillRegistryHost } from "./skills.ts";
+import { registerStep, STEP_PREFIX, stepSkill, stepSkills, stepWorkflowName } from "./steps.ts";
+import { addTurn, emptyTotals, listFlag } from "./usage.ts";
 
-export { type CliIo, EXIT } from "./cli-outcome.js";
+export { type CliIo, EXIT } from "./cli-outcome.ts";
 
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 type Effort = (typeof EFFORTS)[number];
@@ -295,7 +295,7 @@ export async function main(
 			io.err(USAGE);
 			return EXIT.usage;
 		}
-		const { runEval } = await import("./eval.js");
+		const { runEval } = await import("./eval.ts");
 		return runEval(target ? resolve(target) : undefined, {
 			outDir: values.out,
 			dryRun: values["dry-run"],

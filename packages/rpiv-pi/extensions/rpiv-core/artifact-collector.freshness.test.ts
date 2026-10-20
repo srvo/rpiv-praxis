@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BranchEntry } from "@juicesharp/rpiv-workflow/registration";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { rpivArtifactCollector, rpivBucketCollector, writtenInStageWindow } from "./artifact-collector.js";
+import { rpivArtifactCollector, rpivBucketCollector, writtenInStageWindow } from "./artifact-collector.ts";
 
 describe("stage-window freshness (kata mykj)", () => {
 	let tmpDir: string;

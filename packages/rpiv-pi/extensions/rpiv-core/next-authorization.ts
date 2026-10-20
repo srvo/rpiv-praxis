@@ -4,7 +4,7 @@ import {
 	type InputEvent,
 	parseSkillBlock,
 } from "@earendil-works/pi-coding-agent";
-import type { RPIV_STAGE_NAMES } from "./pipeline-pointer.js";
+import type { RPIV_STAGE_NAMES } from "./pipeline-pointer.ts";
 
 type CommandIdentity = { name: string; source?: string; sourceInfo?: { path?: string } };
 const NEXT_COMMANDS_KEY = Symbol.for("@juicesharp/rpiv-pi/next-target-commands");

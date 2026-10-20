@@ -11,13 +11,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StageDef, Workflow } from "./api.js";
-import { defineWorkflow, produces } from "./api.js";
-import { fs as fsHandle } from "./handle.js";
-import { fanout } from "./loop-constructors.js";
-import type { Outcome } from "./output-spec.js";
-import { runWorkflow } from "./runner/index.js";
-import { hasLeakedToolMarkup } from "./transcript.js";
+import type { StageDef, Workflow } from "./api.ts";
+import { defineWorkflow, produces } from "./api.ts";
+import { fs as fsHandle } from "./handle.ts";
+import { fanout } from "./loop-constructors.ts";
+import type { Outcome } from "./output-spec.ts";
+import { runWorkflow } from "./runner/index.ts";
+import { hasLeakedToolMarkup } from "./transcript.ts";
 
 const PATH_RE = /\.rpiv\/artifacts\/[\w-]+\/[\w.-]+\.md/g;
 

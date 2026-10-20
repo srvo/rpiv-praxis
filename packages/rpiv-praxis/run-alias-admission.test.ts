@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RunWorkflowResult } from "@juicesharp/rpiv-workflow";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ClaudeHostDeps } from "./claude-host.js";
-import { EXIT, main, type WorkflowApi } from "./cli.js";
-import { hasRunAliasEntry, resolveRunAlias } from "./run-alias.js";
+import type { ClaudeHostDeps } from "./claude-host.ts";
+import { EXIT, main, type WorkflowApi } from "./cli.ts";
+import { hasRunAliasEntry, resolveRunAlias } from "./run-alias.ts";
 
 const roots: string[] = [];
 afterEach(() => {

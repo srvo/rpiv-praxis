@@ -1,6 +1,6 @@
 import { parseFrontmatter as piParseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it } from "vitest";
-import { parseFrontmatter } from "./frontmatter.js";
+import { parseFrontmatter } from "./frontmatter.ts";
 
 // The local copy exists so the built-in workflows load without Pi; it must stay
 // indistinguishable from the function it replaced.

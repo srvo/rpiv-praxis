@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadWorkflows } from "@juicesharp/rpiv-workflow/registration";
 import { describe, expect, it } from "vitest";
-import { registerRpivWorkflowSupport } from "./rpiv-support.js";
-import { registerStep, stepSkill, stepSkills, stepWorkflowName } from "./steps.js";
+import { registerRpivWorkflowSupport } from "./rpiv-support.ts";
+import { registerStep, stepSkill, stepSkills, stepWorkflowName } from "./steps.ts";
 
 function project() {
 	const cwd = mkdtempSync(join(tmpdir(), "rpiv-steps-"));

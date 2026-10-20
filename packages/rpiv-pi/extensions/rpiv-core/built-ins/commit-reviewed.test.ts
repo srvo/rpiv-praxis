@@ -8,7 +8,7 @@
 import type { RunView } from "@juicesharp/rpiv-workflow";
 import { fs as fsHandle } from "@juicesharp/rpiv-workflow/registration";
 import { describe, expect, it } from "vitest";
-import { findWorkflow } from "../workflow-test-harness.js";
+import { findWorkflow } from "../workflow-test-harness.ts";
 
 const commitDispatch = async (workflow: string, named: Record<string, unknown>) => {
 	const prompt = findWorkflow(workflow).stages.commit?.prompt;

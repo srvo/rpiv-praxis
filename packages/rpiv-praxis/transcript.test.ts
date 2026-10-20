@@ -10,7 +10,7 @@ import {
 	readSessionBranch,
 	stampStop,
 	userEntry,
-} from "./transcript.js";
+} from "./transcript.ts";
 
 describe("stampStop", () => {
 	it("stamps the last assistant entry at or after the turn start", () => {

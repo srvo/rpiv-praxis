@@ -13,9 +13,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createMockSessionChain, mockAssistantMessage } from "@juicesharp/rpiv-test-utils";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { defineWorkflow } from "../api.js";
-import { __resetWorkflowExecutionHost, registerWorkflowExecutionHost } from "../execution-host.js";
-import { runWorkflow } from "./runner.js";
+import { defineWorkflow } from "../api.ts";
+import { __resetWorkflowExecutionHost, registerWorkflowExecutionHost } from "../execution-host.ts";
+import { runWorkflow } from "./runner.ts";
 
 let tmpDir: string;
 beforeEach(() => {

@@ -23,8 +23,8 @@
  *                          exported below instead of duplicating them.
  */
 
-import { WorkflowAbortError, WorkflowParkedError } from "../internal-utils.js";
-import type { SessionRef } from "../state/index.js";
+import { WorkflowAbortError, WorkflowParkedError } from "../internal-utils.ts";
+import type { SessionRef } from "../state/index.ts";
 import {
 	type BranchEntry,
 	classifyStop,
@@ -32,13 +32,13 @@ import {
 	readBranch,
 	readSessionRef,
 	type StopSignal,
-} from "../transcript.js";
-import type { StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.js";
-import { bashStrikesRemaining, bashTimeoutSteeringMessage, consumeBashStrike } from "./bash-strikes.js";
-import { produceAndValidateOutput } from "./extraction.js";
-import { haltStageOrSoftHalt } from "./halt-routing.js";
-import { branchOffsetFor, resendIntoChild, spawnChildAndRun } from "./spawn.js";
-import { recordStageSuccess } from "./success-persist.js";
+} from "../transcript.ts";
+import type { StageSessionContext, WorkflowHostContext, WorkflowSessionContext } from "../types.ts";
+import { bashStrikesRemaining, bashTimeoutSteeringMessage, consumeBashStrike } from "./bash-strikes.ts";
+import { produceAndValidateOutput } from "./extraction.ts";
+import { haltStageOrSoftHalt } from "./halt-routing.ts";
+import { branchOffsetFor, resendIntoChild, spawnChildAndRun } from "./spawn.ts";
+import { recordStageSuccess } from "./success-persist.ts";
 
 // ===========================================================================
 // PUBLIC ENTRIES — what the orchestrator calls

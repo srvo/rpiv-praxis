@@ -48,7 +48,7 @@ import {
 	transcriptPathCollector,
 	// Runner-free entry — keeps the ~530ms engine off the startup path.
 } from "@juicesharp/rpiv-workflow/registration";
-import { parseFrontmatter } from "./frontmatter.js";
+import { parseFrontmatter } from "./frontmatter.ts";
 
 // ---------------------------------------------------------------------------
 // Collectors — text-scan over assistant transcript

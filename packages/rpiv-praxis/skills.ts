@@ -12,7 +12,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import type { WorkflowHost } from "@juicesharp/rpiv-workflow";
-import { claudeConfigDir } from "./transcript.js";
+import { claudeConfigDir } from "./transcript.ts";
 
 export const PLUGIN_NAME = "rpiv";
 

@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { runsDir } from "../state/paths.js";
-import { acquireResumeLock, ResumeAlreadyRunningError } from "./resume-lock.js";
+import { runsDir } from "../state/paths.ts";
+import { acquireResumeLock, ResumeAlreadyRunningError } from "./resume-lock.ts";
 
 let cwd: string;
 afterEach(() => {

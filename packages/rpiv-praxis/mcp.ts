@@ -18,9 +18,9 @@ import { execFile, spawn as nodeSpawn } from "node:child_process";
 import { existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openParks, readParks, resolveRunId, runsDir } from "./park-store.js";
-import { resolveRunAlias } from "./run-alias.js";
-import { stepSkills } from "./steps.js";
+import { openParks, readParks, resolveRunId, runsDir } from "./park-store.ts";
+import { resolveRunAlias } from "./run-alias.ts";
+import { stepSkills } from "./steps.ts";
 
 export const CLI_BIN = join(dirname(fileURLToPath(import.meta.url)), "bin", "rpiv-wf.mjs");
 

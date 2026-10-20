@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadWorkflows } from "@juicesharp/rpiv-workflow/registration";
 import { describe, expect, it } from "vitest";
-import { registerRpivWorkflowSupport, skillFiles } from "./rpiv-support.js";
+import { registerRpivWorkflowSupport, skillFiles } from "./rpiv-support.ts";
 
 describe("skillFiles", () => {
 	it("names a skill by its frontmatter, falling back to the directory", () => {

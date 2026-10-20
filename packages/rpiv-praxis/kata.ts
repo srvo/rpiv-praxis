@@ -15,7 +15,7 @@
 import { execFileSync } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
-import type { Park } from "./park-store.js";
+import type { Park } from "./park-store.ts";
 
 export const KATA_LABEL = "rpiv-parked";
 /** Labels a park's ticket carries unless configured otherwise. */

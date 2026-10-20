@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { Kata } from "./kata.js";
-import { readParks, runsDir, updatePark } from "./park-store.js";
-import { createRunParking, toQuestions } from "./parking.js";
+import type { Kata } from "./kata.ts";
+import { readParks, runsDir, updatePark } from "./park-store.ts";
+import { createRunParking, toQuestions } from "./parking.ts";
 
 const project = () => {
 	const cwd = mkdtempSync(join(tmpdir(), "rpiv-parking-"));

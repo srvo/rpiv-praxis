@@ -1,8 +1,8 @@
 import { writeFileSync } from "node:fs";
 import type { RunWorkflowResult } from "@juicesharp/rpiv-workflow";
-import { formatPark, type Park } from "./park-store.js";
-import type { RunLedger } from "./run-ledger.js";
-import type { UsageTotals } from "./usage.js";
+import { formatPark, type Park } from "./park-store.ts";
+import type { RunLedger } from "./run-ledger.ts";
+import type { UsageTotals } from "./usage.ts";
 
 export const EXIT = { ok: 0, failed: 1, usage: 2, parked: 75, budget: 76, timeout: 124, interrupted: 130 } as const;
 

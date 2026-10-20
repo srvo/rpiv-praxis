@@ -12,8 +12,8 @@
  * summary; nothing is appended to a local file, and no database is required.
  * Wiring a persisted sink (monocloud's `surface_for_cio`) is a later, deliberate step.
  */
-import type { TrialResult } from "./eval.js";
-import { EXIT_STATE } from "./mcp.js";
+import type { TrialResult } from "./eval.ts";
+import { EXIT_STATE } from "./mcp.ts";
 
 /** One functional-status observation, shaped to survive the trip into activity.timeline. */
 export interface ActivityItem {

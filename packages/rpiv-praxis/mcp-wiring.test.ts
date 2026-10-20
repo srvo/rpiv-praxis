@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CLI_BIN, nodeDeps, startServer } from "./mcp.js";
+import { CLI_BIN, nodeDeps, startServer } from "./mcp.ts";
 
 // Replace only the stdio transport: a real server must not read this test process's stdin.
 const started = vi.hoisted(() => ({ count: 0 }));

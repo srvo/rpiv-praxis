@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { PIPELINE_POINTER, RPIV_STAGE_NAMES } from "./pipeline-pointer.js";
+import { PIPELINE_POINTER, RPIV_STAGE_NAMES } from "./pipeline-pointer.ts";
 
 const skillText = (name: string) =>
 	readFileSync(fileURLToPath(new URL(`../../skills/${name}/SKILL.md`, import.meta.url)), "utf8");
