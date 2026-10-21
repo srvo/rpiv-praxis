@@ -510,7 +510,24 @@ describe("rpiv-wf parked questions", () => {
 		}
 	});
 
-	it("--kata and --kata-labels configure the park tickets", async () => {
+	it("by default parked questions are not filed in kata (Forgejo is the tracker)", async () => {
+		vi.stubEnv("RPIV_WF_TRACKER", "");
+		vi.stubEnv("RPIV_WF_KATA", "");
+		vi.stubEnv("FORGEJO_ACCESS_TOKEN", "");
+		const detect = vi.fn(() => undefined);
+		const h = harness();
+		const r = io();
+		await main(["run", "wf", "--cwd", project(), "--plugin-dir", plugin()], r.io, {
+			api: h.api,
+			deps: { query: vi.fn(), forkSession: vi.fn() } as never,
+			detectKata: detect,
+		});
+		vi.unstubAllEnvs();
+		expect(detect).not.toHaveBeenCalled();
+	});
+
+	it("with RPIV_WF_TRACKER=kata, --kata and --kata-labels configure the park tickets", async () => {
+		vi.stubEnv("RPIV_WF_TRACKER", "kata");
 		const detect = vi.fn(() => undefined);
 		const h = harness();
 		await main(
@@ -529,10 +546,16 @@ describe("rpiv-wf parked questions", () => {
 			io().io,
 			{ api: h.api, deps: { query: vi.fn(), forkSession: vi.fn() } as never, detectKata: detect },
 		);
-		expect(detect).toHaveBeenCalledWith(expect.any(Function), undefined, undefined, {
-			labels: ["rpiv-parked", "human", "phase"],
-			parent: "ph42",
-		});
+		expect(detect).toHaveBeenCalledWith(
+			expect.any(Function),
+			undefined,
+			expect.objectContaining({ RPIV_WF_TRACKER: "kata" }),
+			{
+				labels: ["rpiv-parked", "human", "phase"],
+				parent: "ph42",
+			},
+		);
+		vi.unstubAllEnvs();
 	});
 });
 

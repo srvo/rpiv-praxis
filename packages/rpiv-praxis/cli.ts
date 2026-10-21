@@ -30,6 +30,7 @@ import { parseArgs } from "node:util";
 import type { RunWorkflowResult, WorkflowHostContext } from "@juicesharp/rpiv-workflow";
 import { type ClaudeHostDeps, ClaudeWorkflowHost } from "./claude-host.ts";
 import { type CliIo, EXIT, reportInvocation } from "./cli-outcome.ts";
+import { pickTracker } from "./forgejo.ts";
 import { detectKata, type Kata, type KataOptions } from "./kata.ts";
 import {
 	formatPark,
@@ -356,7 +357,7 @@ export async function main(
 	};
 	const kata =
 		inject.kata === undefined
-			? (inject.detectKata ?? detectKata)(warn, undefined, undefined, kataOpts)
+			? pickTracker(warn, inject.detectKata ?? detectKata, undefined, process.env, kataOpts)
 			: (inject.kata ?? undefined);
 	let resumeRef = target;
 	let locatedRunId = command === "resume" || command === "answer" ? resolveRunId(cwd, target!) : undefined;

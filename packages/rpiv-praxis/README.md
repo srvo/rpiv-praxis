@@ -85,7 +85,7 @@ Without the global install, `rpiv-wf` is
 | `--stage-max-tokens <n>` | none | stop once any one stage has used this many tokens |
 | `--park-confirmations` | off | park routine confirmations too, instead of taking their (Recommended) option |
 | `--auto-accept-checkpoints` | off | let human-checkpoint stages (build's `design-review`) pass without a person; logged in the run log |
-| `--kata <ref>` | none | file parked-question tickets under this phase ticket |
+| `--kata <ref>` | none | kata only (`RPIV_WF_TRACKER=kata`): file parked-question tickets under this phase ticket |
 | `--kata-labels <a,b>` | `rpiv-parked,human` | labels for parked-question tickets (`none` = no labels) |
 
 | Exit | Means | Next |
@@ -224,19 +224,27 @@ A stage that needs a person does not guess. When a skill calls
 1. The question and its options are saved beside the run log, in
    `.rpiv/workflows/runs/<run-id>.parked.json`. The run log itself keeps
    upstream's format.
-2. If `kata` is on PATH, a ticket is filed with the answer command in its
-   body, labelled `rpiv-parked` and `human` (monocloud's hourly producer copies
-   `human` onto `activity.timeline`). `--kata-labels a,b` (or
-   `RPIV_WF_KATA_LABELS`) replaces the labels, `none` files none; `--kata <ref>`
-   files each park under that phase ticket. `RPIV_WF_KATA=off` disables kata;
-   any kata failure is a warning, never a stop.
+2. If `FORGEJO_ACCESS_TOKEN` is set (run under `bws run --`; the token is read
+   from the environment and sent to `curl` on stdin, never in argv), a Forgejo
+   issue is filed in `EthicalCapital/monocloud` (`RPIV_WF_FORGEJO_REPO=owner/repo`
+   to change it; `FORGEJO_URL`, default `http://forgejo:3000`) with the answer
+   command in its body, labelled `rpiv-parked` and `human` (labels that do not
+   exist in the repo are skipped with a warning). A retried park reuses its
+   issue: the body carries a `<!-- rpiv-park:<run>:<n> -->` marker. With no
+   token nothing is filed, and `rpiv-wf` says so once; the question is still
+   in `rpiv-wf inbox`. `--kata-labels a,b` (or `RPIV_WF_KATA_LABELS`) replaces
+   the labels, `none` files none. `--kata <ref>` applies to kata only and is
+   ignored for Forgejo. kata is being retired: `RPIV_WF_TRACKER=kata` selects
+   the old behavior (a ticket via the `kata` CLI when it is on PATH),
+   `RPIV_WF_TRACKER=off` (or the old `RPIV_WF_KATA=off`) files nothing. Any
+   tracker failure is a warning, never a stop.
 3. The run soft-stops: stages and fan-out units already running finish and are
    kept, no new turn starts, and `rpiv-wf` exits `75`. The park records the
    stage that asked.
 
 `rpiv-wf inbox` lists every waiting question in the project, oldest first.
 `rpiv-wf answer <run> <n> <choice>` takes an option number, a label, or free
-text; it records the answer, closes the kata ticket, and resumes the run
+text; it records the answer, closes the ticket (Forgejo issue or kata), and resumes the run
 (`--no-resume` to only record). The parked stage reopens **its own session**
 and receives the answer, so the work it did before asking is kept.
 
